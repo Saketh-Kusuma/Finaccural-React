@@ -339,15 +339,15 @@ const NotificationService = {
     },
 
     renderBadge() {
-        const badge = document.getElementById("notifBadge");
-        if (!badge) return;
         const count = this.getUnreadCount();
-        if (count > 0) {
-            badge.textContent = count > 99 ? "99+" : String(count);
-            badge.style.display = "flex";
-        } else {
-            badge.style.display = "none";
-        }
+        const text = count > 99 ? "99+" : String(count);
+        const displayStyle = count > 0 ? "flex" : "none";
+        
+        const badges = document.querySelectorAll(".fa-notif-badge");
+        badges.forEach(badge => {
+            badge.textContent = text;
+            badge.style.display = displayStyle;
+        });
     },
 
     renderDrawer() {
@@ -392,25 +392,38 @@ const NotificationService = {
 
         const toggleDrawer = (e) => {
             e.stopPropagation();
+            // Close account menu dropdown first to prevent overlap
+            const dropdown = document.getElementById("accountMenuDropdown");
+            if (dropdown) dropdown.style.display = "none";
+
             const el = drawer();
             if (!el) return;
             const willOpen = el.style.display === "none";
-            el.style.display = willOpen ? "flex" : "none";
             if (willOpen) {
+                // Set correct top offset based on whether connected dashboard has row 2 visible
+                const isConnected = document.getElementById("dashConnected")?.style.display !== "none";
+                el.style.top = isConnected ? "88px" : "56px";
+                
                 // Opening the drawer shows the full history and marks
                 // everything read — the unread badge disappears.
                 this.renderDrawer();
                 this.markAllRead();
             }
+            el.style.display = willOpen ? "flex" : "none";
         };
-        document.getElementById("notifBellBtn")?.addEventListener("click", toggleDrawer);
+        document.getElementById("notifBellBtn1")?.addEventListener("click", toggleDrawer);
+        document.getElementById("notifBellBtn2")?.addEventListener("click", toggleDrawer);
+        document.getElementById("notifBellBtn3")?.addEventListener("click", toggleDrawer);
 
-        // Close the drawer when clicking anywhere outside it (or the bell).
+        // Close the drawer when clicking anywhere outside it (or any of the bells).
         document.addEventListener("click", (e) => {
             const el = drawer();
-            const bell = document.getElementById("notifBellBtn");
-            if (el && el.style.display !== "none" && !el.contains(e.target) && !(bell && bell.contains(e.target))) {
-                el.style.display = "none";
+            if (el && el.style.display !== "none" && !el.contains(e.target)) {
+                // Check if the click was on any of the bells
+                const clickedBell = e.target.closest(".fa-notif-bell-btn");
+                if (!clickedBell) {
+                    el.style.display = "none";
+                }
             }
         });
 

@@ -364,7 +364,20 @@
     <!-- ============================================================
            VIEW: DASHBOARD
            ============================================================ -->
-    <div id="viewDashboard" class="view">
+    <div id="viewDashboard" class="view" style="position: relative;">
+
+      <!-- Notification Drawer (opens directly below the active header) -->
+      <div class="fa-notif-drawer-anchor" style="z-index: 10000;">
+        <div class="fa-notif-drawer" id="notifDrawer" style="display:none;">
+          <div class="fa-notif-drawer-header">
+            <span class="fa-notif-drawer-title">Notifications</span>
+            <button class="fa-notif-clear-btn" id="notifClearAllBtn">Clear All</button>
+          </div>
+          <div class="fa-notif-list" id="notifList">
+            <!-- Populated dynamically by JS -->
+          </div>
+        </div>
+      </div>
 
       <!-- ============================================================
              DISCONNECTED STATE: Header + Connect cards
@@ -381,6 +394,14 @@
             </div>
           </div>
           <div class="dash-brand-right">
+            <button class="fa-notif-bell-btn" id="notifBellBtn1" title="Notifications" aria-label="Notifications">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span class="fa-notif-badge" id="notifBadge1" style="display:none;">0</span>
+            </button>
             <button class="dash-avatar-btn header-avatar" id="dashHeaderAvatarBtn1">V</button>
             <button class="header-collapse-btn">‹</button>
           </div>
@@ -583,6 +604,14 @@
               </div>
             </div>
             <div class="conn-header-right">
+              <button class="fa-notif-bell-btn" id="notifBellBtn2" title="Notifications" aria-label="Notifications">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="fa-notif-badge" id="notifBadge2" style="display:none;">0</span>
+              </button>
               <button class="dash-avatar-btn header-avatar" id="dashHeaderAvatarBtn2">A</button>
             </div>
           </div>
@@ -674,13 +703,13 @@
           </div>
           <div class="fa-header-right">
             <span class="fa-plan-badge" id="connTierBadge">PRO PLAN</span>
-            <button class="fa-notif-bell-btn" id="notifBellBtn" title="Notifications" aria-label="Notifications">
+            <button class="fa-notif-bell-btn" id="notifBellBtn3" title="Notifications" aria-label="Notifications">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
                 <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
               </svg>
-              <span class="fa-notif-badge" id="notifBadge" style="display:none;">0</span>
+              <span class="fa-notif-badge" id="notifBadge3" style="display:none;">0</span>
             </button>
             <button class="fa-avatar-btn" id="dashHeaderAvatarBtn3">V</button>
           </div>
@@ -694,18 +723,7 @@
               id="connRealmId">—</span></span>
         </div>
 
-        <!-- Notification Drawer (opens directly below the header) -->
-        <div class="fa-notif-drawer-anchor">
-          <div class="fa-notif-drawer" id="notifDrawer" style="display:none;">
-            <div class="fa-notif-drawer-header">
-              <span class="fa-notif-drawer-title">Notifications</span>
-              <button class="fa-notif-clear-btn" id="notifClearAllBtn">Clear All</button>
-            </div>
-            <div class="fa-notif-list" id="notifList">
-              <!-- Populated dynamically by JS -->
-            </div>
-          </div>
-        </div>
+
 
         <!-- ── SCROLLABLE BODY ─────────────────────────────────── -->
         <div class="fa-body scrollable">

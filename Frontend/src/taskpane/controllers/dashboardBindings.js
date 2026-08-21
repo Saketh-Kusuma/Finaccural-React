@@ -56,6 +56,10 @@ export function bindDashboardView() {
     // Dropdown Toggle
     const toggleDropdown = (e) => {
         e.stopPropagation();
+        // Close notification drawer first to prevent overlap
+        const drawer = document.getElementById("notifDrawer");
+        if (drawer) drawer.style.display = "none";
+
         const dropdown = document.getElementById("accountMenuDropdown");
         if (dropdown) {
             dropdown.style.display = dropdown.style.display === "none" ? "flex" : "none";
