@@ -63,6 +63,14 @@ module.exports = async (env, options) => {
             to: "assets/[name][ext][query]",
           },
           {
+            // taskpane.css is emitted as a standalone asset (there is no
+            // css-loader in this build), so its @import rules are resolved by
+            // the browser at runtime, relative to the emitted stylesheet.
+            // Copy the style modules to dist/styles/ so those imports resolve.
+            from: "src/taskpane/styles/*.css",
+            to: "styles/[name][ext]",
+          },
+          {
             from: "manifest*.xml",
             to: "[name]" + "[ext]",
             transform(content) {

@@ -7,7 +7,7 @@ const DEFAULT_WRITE_BATCH_SIZE = 20;
  * records to the sheet, regardless of how many new/updated records the
  * backend actually returned in one pull.
  */
-export const MANUAL_REFRESH_BATCH_SIZE = 10;
+export const MANUAL_REFRESH_BATCH_SIZE = 100;
 
 // Background fill applied to rows flagged as newly added since the last
 // Master Data Pull. Previously existing rows are left with the default
@@ -493,26 +493,7 @@ export function takeNextManualBatch(records, nextIndex, batchSize = MANUAL_REFRE
   };
 }
 
-// ============================================================
-// "Has a full cycle completed before?" marker
-// ============================================================
-//
-// Separate from the manual batch queue above (which is deleted the
-// moment a cycle finishes, so the *next* click starts a fresh cycle at
-// record 1). Without this marker, every cycle after the very first one
-// looks identical to the very first one: the sheet gets cleared via
-// ExcelService.clearMasterDataRange() and only the first
-// MANUAL_REFRESH_BATCH_SIZE records are written back, leaving the sheet
-// sitting mostly empty until several more Pull/Refresh clicks refill
-// it — i.e. previously-completed data "goes away" from the user's
-// point of view. This marker lets the caller tell those two situations
-// apart: the very first pull for a provider/company is still paced one
-// click at a time, but once a cycle has completed here before, a new
-// cycle is written back in full within the same click that fetched it,
-// so completed data is never left in a visibly-diminished state.
-//
-// Persisted the same way as the manual batch queue (localStorage, keyed
-// by provider/company) so it survives a taskpane reload.
+
 
 const MANUAL_QUEUE_COMPLETED_KEY = "fa_manual_batch_completed_once";
 
@@ -573,30 +554,7 @@ export function resetManualCycleCompleted(provider, companyId) {
   saveCompletedOnceMap(all);
 }
 
-// ============================================================
-// Server-driven single-page pull cursor (per click)
-// ============================================================
-//
-// The backend now decides pagination itself: GET /api/pull-master-data
-// takes an optional `cursor` (the JSON-encoded value this same endpoint
-// returned as `cursor` on the previous call) and returns exactly ONE
-// page of up to MANUAL_REFRESH_BATCH_SIZE records for exactly ONE
-// entity — not the whole dataset, and not one page of every entity at
-// once. The entities are drained strictly one at a time, in the fixed
-// order Accounts -> Classes -> Locations -> Customers -> Vendors: an
-// entity is paged 10 records at a time until it is completely finished,
-// and only then does the next one begin, from its own first record.
-// Client-side slicing (takeNextManualBatch /
-// takeNextManualBatchByCategory above) is no longer what paces Pull
-// Master Data / Refresh Schedule; the click itself IS the page request.
-//
-// What's stored here is just that opaque cursor object, per
-// provider/company, so the *next* click (Pull or Refresh, either one —
-// same shared position, same reasoning as the old manual queue above)
-// asks the backend to continue from where the last click left off
-// instead of restarting at record 1. `isDone` in the response means
-// every entity is exhausted; the caller clears the stored cursor at
-// that point so a later click naturally starts a brand-new cycle.
+
 
 const PULL_PAGE_CURSOR_STORAGE_KEY = "fa_pull_page_cursor";
 
@@ -614,9 +572,6 @@ function saveAllPullPageCursors(all) {
   try {
     localStorage.setItem(PULL_PAGE_CURSOR_STORAGE_KEY, JSON.stringify(all));
   } catch (_) {
-    // Storage full/unavailable — worst case the next click restarts the
-    // cycle from record 1 instead of resuming; never a correctness risk,
-    // since the backend treats a missing/empty cursor as "start fresh".
   }
 }
 

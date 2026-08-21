@@ -8,12 +8,17 @@ const { generateOAuthState } = require('../../core/helpers');
 const XeroService         = require('./service');
 const XeroTokenRepository = require('./repository');
 const { ValidationError } = require('../../core/errors/AppError');
+const asyncHandler = require('../../core/errors/asyncHandler');
 
 /**
  * XeroController
  * -----------------------------------------------------------------
  * Handles all incoming HTTP requests for the Xero module.
  * Delegates all business logic to XeroService.
+ * Handlers are wrapped in asyncHandler, which forwards any rejection to
+ * next(err) — that is why they carry no try/catch of their own; the one
+ * exception is xeroCallback, which needs to translate the failure into a
+ * ValidationError before forwarding it.
  * Does NOT contain any data-transformation or mapping logic —
  * that responsibility lives in mapper.js (used by the Service).
  * -----------------------------------------------------------------
@@ -31,22 +36,21 @@ class XeroController {
      * initiate a connect flow tagged with someone else's email and inject
      * a connection into that other user's account.
      */
-    connectXero = async (req, res, next) => {
-        try {
-            const { XeroToken } = require('../../core/database');
-            const mail = req.user.email;
-            const { Op } = require('sequelize');
-            const whereClause = { status: { [Op.ne]: 'Disconnected' }, mail };
-            const xeroCount = await XeroToken.count({ where: whereClause });
-            const tier = (req.query.tier || 'pro').toLowerCase();
+    connectXero = asyncHandler(async (req, res, next) => {
+        const { XeroToken } = require('../../core/database');
+        const mail = req.user.email;
+        const { Op } = require('sequelize');
+        const whereClause = { status: { [Op.ne]: 'Disconnected' }, mail };
+        const xeroCount = await XeroToken.count({ where: whereClause });
+        const tier = (req.query.tier || 'pro').toLowerCase();
 
-            let maxAllowed = 10;
-            if (tier === 'trial') maxAllowed = 1;
-            else if (tier === 'basic') maxAllowed = 1;
-            else if (tier === 'standard') maxAllowed = 3;
+        let maxAllowed = 10;
+        if (tier === 'trial') maxAllowed = 1;
+        else if (tier === 'basic') maxAllowed = 1;
+        else if (tier === 'standard') maxAllowed = 3;
 
-            if (xeroCount >= maxAllowed) {
-                return res.send(`
+        if (xeroCount >= maxAllowed) {
+            return res.send(`
                     <html>
                         <body style="font-family:sans-serif; text-align:center; padding: 40px; background:#fff1f2; color:#9f1239;">
                             <div style="font-size: 50px; margin-bottom: 20px;">⚠️</div>
@@ -57,29 +61,26 @@ class XeroController {
                         </body>
                     </html>
                 `);
-            }
-
-            const state = generateOAuthState();
-            req.session.xero_state = state;
-            req.session.user_mail  = mail;
-            req.session.xero_tier  = tier;
-            req.session.xero_max_allowed = maxAllowed;
-
-            const params = {
-                response_type: 'code',
-                client_id:     config.XERO.CLIENT_ID,
-                redirect_uri:  config.XERO.REDIRECT_URI,
-                scope:         config.XERO.SCOPES,
-                state
-            };
-
-            const authUrl = `${CONSTANTS.XERO.AUTH_URL}?${querystring.stringify(params)}`;
-            logger.info('Redirecting to Xero OAuth... URL: ' + authUrl);
-            res.redirect(authUrl);
-        } catch (error) {
-            next(error);
         }
-    };
+
+        const state = generateOAuthState();
+        req.session.xero_state = state;
+        req.session.user_mail  = mail;
+        req.session.xero_tier  = tier;
+        req.session.xero_max_allowed = maxAllowed;
+
+        const params = {
+            response_type: 'code',
+            client_id:     config.XERO.CLIENT_ID,
+            redirect_uri:  config.XERO.REDIRECT_URI,
+            scope:         config.XERO.SCOPES,
+            state
+        };
+
+        const authUrl = `${CONSTANTS.XERO.AUTH_URL}?${querystring.stringify(params)}`;
+        logger.info('Redirecting to Xero OAuth... URL: ' + authUrl);
+        res.redirect(authUrl);
+    });
 
     /**
      * GET /api/xero/callback
@@ -525,260 +526,204 @@ class XeroController {
      * Receives the user's chosen tenant IDs (from the selection page),
      * reads the pending tokens from session, and persists only the chosen orgs.
      */
-    selectCompanies = async (req, res, next) => {
-        try {
-            const { selectedTenantIds } = req.body;
+    selectCompanies = asyncHandler(async (req, res, next) => {
+        const { selectedTenantIds } = req.body;
 
-            if (!selectedTenantIds || !Array.isArray(selectedTenantIds) || selectedTenantIds.length === 0) {
-                throw new ValidationError('No companies selected.');
-            }
-
-            // Read pending data from session
-            const tokens     = req.session?.xero_pending_tokens;
-            const tenants    = req.session?.xero_pending_tenants;
-            const mail       = req.session?.xero_pending_mail || req.session?.user_mail || null;
-            const sessionInfo = JSON.stringify(req.session || {});
-
-            if (!tokens || !tenants) {
-                throw new ValidationError('Session expired. Please reconnect Xero.');
-            }
-
-            const { XeroToken } = require('../../core/database');
-            const whereClause = mail ? { mail } : {};
-            const otherCount = await XeroToken.count({
-                where: {
-                    ...whereClause,
-                    tenant_id: {
-                        [require('sequelize').Op.notIn]: selectedTenantIds
-                    }
-                }
-            });
-
-            const maxAllowed = req.session?.xero_max_allowed || 10;
-            if (otherCount + selectedTenantIds.length > maxAllowed) {
-                throw new ValidationError(
-                    `Your plan allows a maximum of ${maxAllowed} Xero companies. You currently have ${otherCount} connected companies and selected ${selectedTenantIds.length} more.`
-                );
-            }
-
-            await XeroService.saveSelectedTenants(selectedTenantIds, tokens, tenants, mail, sessionInfo);
-
-            // Clear pending session data now that we've saved
-            delete req.session.xero_pending_tokens;
-            delete req.session.xero_pending_tenants;
-            delete req.session.xero_pending_mail;
-
-            return res.json({ success: true, connected: selectedTenantIds.length });
-        } catch (err) {
-            next(err);
+        if (!selectedTenantIds || !Array.isArray(selectedTenantIds) || selectedTenantIds.length === 0) {
+            throw new ValidationError('No companies selected.');
         }
-    };
+
+        // Read pending data from session
+        const tokens     = req.session?.xero_pending_tokens;
+        const tenants    = req.session?.xero_pending_tenants;
+        const mail       = req.session?.xero_pending_mail || req.session?.user_mail || null;
+        const sessionInfo = JSON.stringify(req.session || {});
+
+        if (!tokens || !tenants) {
+            throw new ValidationError('Session expired. Please reconnect Xero.');
+        }
+
+        const { XeroToken } = require('../../core/database');
+        const whereClause = mail ? { mail } : {};
+        const otherCount = await XeroToken.count({
+            where: {
+                ...whereClause,
+                tenant_id: {
+                    [require('sequelize').Op.notIn]: selectedTenantIds
+                }
+            }
+        });
+
+        const maxAllowed = req.session?.xero_max_allowed || 10;
+        if (otherCount + selectedTenantIds.length > maxAllowed) {
+            throw new ValidationError(
+                `Your plan allows a maximum of ${maxAllowed} Xero companies. You currently have ${otherCount} connected companies and selected ${selectedTenantIds.length} more.`
+            );
+        }
+
+        await XeroService.saveSelectedTenants(selectedTenantIds, tokens, tenants, mail, sessionInfo);
+
+        // Clear pending session data now that we've saved
+        delete req.session.xero_pending_tokens;
+        delete req.session.xero_pending_tenants;
+        delete req.session.xero_pending_mail;
+
+        return res.json({ success: true, connected: selectedTenantIds.length });
+    });
 
     /**
      * POST /api/xero/disconnect
      * Clears the authenticated user's own stored Xero tokens only.
      */
-    disconnectXero = async (req, res, next) => {
-        try {
-            await XeroTokenRepository.clearTokens(req.user.email);
-            res.json({ success: true, message: 'Xero tokens cleared successfully.' });
-        } catch (error) {
-            next(error);
-        }
-    };
+    disconnectXero = asyncHandler(async (req, res, next) => {
+        await XeroTokenRepository.clearTokens(req.user.email);
+        res.json({ success: true, message: 'Xero tokens cleared successfully.' });
+    });
 
     /**
      * GET /api/xero/tokens
      * Returns the authenticated user's own stored Xero OAuth tokens.
      */
-    listXeroTokens = async (req, res, next) => {
-        try {
-            const tokens = await XeroTokenRepository.getAllTokens(req.user.email);
-            res.json({ success: true, tokens });
-        } catch (err) {
-            next(err);
-        }
-    };
+    listXeroTokens = asyncHandler(async (req, res, next) => {
+        const tokens = await XeroTokenRepository.getAllTokens(req.user.email);
+        res.json({ success: true, tokens });
+    });
 
     /**
      * GET /api/xero/contacts
      * Returns a list of mapped ContactDTOs for the authenticated user's tenants.
      */
-    getContacts = async (req, res, next) => {
-        try {
-            const contacts = await XeroService.getContacts(req.user.email);
-            res.json({ contacts });
-        } catch (err) {
-            next(err);
-        }
-    };
+    getContacts = asyncHandler(async (req, res, next) => {
+        const contacts = await XeroService.getContacts(req.user.email);
+        res.json({ contacts });
+    });
 
     /**
      * GET /api/xero/accounts
      * Returns a list of mapped AccountDTOs for the authenticated user's tenants.
      */
-    getAccounts = async (req, res, next) => {
-        try {
-            const accounts = await XeroService.getAccounts(req.user.email);
-            res.json({ accounts });
-        } catch (err) {
-            next(err);
-        }
-    };
+    getAccounts = asyncHandler(async (req, res, next) => {
+        const accounts = await XeroService.getAccounts(req.user.email);
+        res.json({ accounts });
+    });
 
     /**
      * GET /api/xero/classes
      * Returns a list of mapped ClassDTOs for the authenticated user's tenants.
      */
-    getClasses = async (req, res, next) => {
-        try {
-            const classes = await XeroService.getClasses(req.user.email);
-            res.json({ classes });
-        } catch (err) {
-            next(err);
-        }
-    };
+    getClasses = asyncHandler(async (req, res, next) => {
+        const classes = await XeroService.getClasses(req.user.email);
+        res.json({ classes });
+    });
 
     /**
      * GET /api/xero/locations
      * Returns a list of mapped LocationDTOs for the authenticated user's tenants.
      */
-    getLocations = async (req, res, next) => {
-        try {
-            const locations = await XeroService.getLocations(req.user.email);
-            res.json({ locations });
-        } catch (err) {
-            next(err);
-        }
-    };
+    getLocations = asyncHandler(async (req, res, next) => {
+        const locations = await XeroService.getLocations(req.user.email);
+        res.json({ locations });
+    });
 
     /**
      * GET /api/xero/organisation
      * Returns organisation info for the authenticated user's tenants.
      */
-    getOrganisation = async (req, res, next) => {
-        try {
-            const organisation = await XeroService.getOrganisation(req.user.email);
-            res.json({ organisation });
-        } catch (err) {
-            next(err);
-        }
-    };
+    getOrganisation = asyncHandler(async (req, res, next) => {
+        const organisation = await XeroService.getOrganisation(req.user.email);
+        res.json({ organisation });
+    });
 
     /**
      * GET /api/xero/connections
      */
-    listConnections = async (req, res, next) => {
-        try {
-            const mail = req.user.email;
-            const list = await XeroService.listConnections(mail);
-            return res.json(list);
-        } catch (err) {
-            return next(err);
-        }
-    };
+    listConnections = asyncHandler(async (req, res, next) => {
+        const mail = req.user.email;
+        const list = await XeroService.listConnections(mail);
+        return res.json(list);
+    });
 
     /**
      * GET /api/xero/connections/stats
      */
-    getConnectionStats = async (req, res, next) => {
-        try {
-            const mail = req.user.email;
-            const plan = req.query.plan || 'pro';
+    getConnectionStats = asyncHandler(async (req, res, next) => {
+        const mail = req.user.email;
+        const plan = req.query.plan || 'pro';
 
-            const stats = {
-                plan: plan.toLowerCase(),
-                maxPerPlatform: 10,
-                xero:       { connected: 0, remaining: 10 }
-            };
+        const stats = {
+            plan: plan.toLowerCase(),
+            maxPerPlatform: 10,
+            xero:       { connected: 0, remaining: 10 }
+        };
 
-            if (plan === 'trial')    stats.maxPerPlatform = 1;
-            else if (plan === 'basic')    stats.maxPerPlatform = 1;
-            else if (plan === 'standard') stats.maxPerPlatform = 3;
+        if (plan === 'trial')    stats.maxPerPlatform = 1;
+        else if (plan === 'basic')    stats.maxPerPlatform = 1;
+        else if (plan === 'standard') stats.maxPerPlatform = 3;
 
-            const xeroStats = await XeroService.getConnectionStats(mail, plan);
-            stats.xero = {
-                connected: xeroStats.connected,
-                remaining: xeroStats.remaining
-            };
+        const xeroStats = await XeroService.getConnectionStats(mail, plan);
+        stats.xero = {
+            connected: xeroStats.connected,
+            remaining: xeroStats.remaining
+        };
 
-            return res.json(stats);
-        } catch (err) {
-            return next(err);
-        }
-    };
+        return res.json(stats);
+    });
 
     /**
      * DELETE /api/xero/connections/:id
      */
-    disconnectConnection = async (req, res, next) => {
-        try {
-            const companyId = req.params.id;
-            const success = await XeroService.disconnectConnection(companyId, req.user.email);
-            return res.json({ success: !!success });
-        } catch (err) {
-            return next(err);
-        }
-    };
+    disconnectConnection = asyncHandler(async (req, res, next) => {
+        const companyId = req.params.id;
+        const success = await XeroService.disconnectConnection(companyId, req.user.email);
+        return res.json({ success: !!success });
+    });
 
     /**
      * POST /api/xero/connections/:id/activate
      */
-    activateConnection = async (req, res, next) => {
-        try {
-            const companyId = req.params.id;
-            const success = await XeroService.activateConnection(companyId, req.user.email);
-            return res.json({ success: !!success });
-        } catch (err) {
-            return next(err);
-        }
-    };
+    activateConnection = asyncHandler(async (req, res, next) => {
+        const companyId = req.params.id;
+        const success = await XeroService.activateConnection(companyId, req.user.email);
+        return res.json({ success: !!success });
+    });
 
     /**
      * PATCH /api/xero/connections/:id/rename
      */
-    renameConnection = async (req, res, next) => {
-        try {
-            const companyId = req.params.id;
-            const { companyName } = req.body;
-            if (!companyName) {
-                throw new ValidationError('companyName is required.');
-            }
-
-            const success = await XeroService.renameConnection(companyId, req.user.email, companyName);
-            return res.json({ success: !!success });
-        } catch (err) {
-            return next(err);
+    renameConnection = asyncHandler(async (req, res, next) => {
+        const companyId = req.params.id;
+        const { companyName } = req.body;
+        if (!companyName) {
+            throw new ValidationError('companyName is required.');
         }
-    };
+
+        const success = await XeroService.renameConnection(companyId, req.user.email, companyName);
+        return res.json({ success: !!success });
+    });
 
     /**
      * GET /api/xero/pull-master-data?companyId=...&tier=...
      */
-    pullMasterData = async (req, res, next) => {
-        try {
-            const { companyId, tier } = req.query;
+    pullMasterData = asyncHandler(async (req, res, next) => {
+        const { companyId, tier } = req.query;
 
-            const aggregated = await XeroService.pullMasterData(companyId, tier, req.user.email);
+        const aggregated = await XeroService.pullMasterData(companyId, tier, req.user.email);
 
-            if (!aggregated) {
-                const { AppError } = require('../../core/errors/AppError');
-                throw new AppError('The requested resource was not found.', 404, 'ERR_NOT_FOUND', `No active connections found for xero.`);
-            }
-
-            return res.json({
-                company:   aggregated.company.length === 1 ? aggregated.company[0] : aggregated.company,
-                customers: aggregated.customers,
-                vendors:   aggregated.vendors,
-                accounts:  aggregated.accounts,
-                classes:   aggregated.classes,
-                locations: aggregated.locations,
-                isFirstSync: aggregated.isFirstSync
-            });
-        } catch (err) {
-            return next(err);
+        if (!aggregated) {
+            const { AppError } = require('../../core/errors/AppError');
+            throw new AppError('The requested resource was not found.', 404, 'ERR_NOT_FOUND', `No active connections found for xero.`);
         }
-    };
+
+        return res.json({
+            company:   aggregated.company.length === 1 ? aggregated.company[0] : aggregated.company,
+            customers: aggregated.customers,
+            vendors:   aggregated.vendors,
+            accounts:  aggregated.accounts,
+            classes:   aggregated.classes,
+            locations: aggregated.locations,
+            isFirstSync: aggregated.isFirstSync
+        });
+    });
 }
 
 module.exports = new XeroController();

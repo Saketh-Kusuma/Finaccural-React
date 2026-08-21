@@ -183,6 +183,74 @@ class XeroService {
     }
 
     /**
+     * Standard Xero request headers for one connected tenant. Always goes
+     * through XeroTokenManager so an expiring access token is refreshed
+     * (and a revoked connection surfaces as a reconnect) rather than being
+     * used as-is.
+     */
+    static async _tenantHeaders(tenantId) {
+        const accessToken = await XeroTokenManager.getValidToken(tenantId);
+        return {
+            Authorization:    `Bearer ${accessToken}`,
+            'Xero-Tenant-Id': tenantId,
+            Accept:           'application/json'
+        };
+    }
+
+    /**
+     * Resolves the display name for a tenant, preferring the live
+     * Organisation record and falling back to the stored company name (and
+     * then the tenant id). A failed lookup is non-fatal: the entity fetch
+     * it decorates is still worth returning.
+     */
+    static async _resolveOrgName(token, tenantId, headers) {
+        let orgName = token.companyName || tenantId;
+        try {
+            const orgRes = await axios.get(CONSTANTS.XERO.ORGANISATION_URL, { headers });
+            const orgObj = XeroMapper.toOrganisation(orgRes.data);
+            if (orgObj && orgObj.name) orgName = orgObj.name;
+        } catch (_) {}
+        return orgName;
+    }
+
+    /**
+     * Shared implementation behind getContacts/getAccounts/getClasses/
+     * getLocations. Queries one Xero endpoint across every connected tenant
+     * for `mail`, in parallel, and tags each record with the tenant id and
+     * its organisation name. A tenant whose request fails is logged and
+     * contributes no records rather than failing the whole call.
+     *
+     * @param {string} url - Xero API URL from CONSTANTS.XERO.
+     * @param {Function} mapFn - (responseData) => DTO[], e.g. XeroMapper.toContactList.
+     * @param {string} logLabel - Plural label used in the per-tenant error log.
+     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @returns {Promise<object[]>}
+     */
+    static async _getEntityList(url, mapFn, logLabel, mail) {
+        const tokens = await XeroService.getAllTokens(mail);
+        const results = await Promise.all(tokens.map(async (token) => {
+            try {
+                const tenantId = token.companyId || token.tenant_id;
+                const headers = await XeroService._tenantHeaders(tenantId);
+                const orgName = await XeroService._resolveOrgName(token, tenantId, headers);
+
+                const response = await axios.get(url, { headers });
+                const records = mapFn(response.data);
+                return records.map(r => ({
+                    ...r,
+                    clientId: tenantId,
+                    clientName: orgName
+                }));
+            } catch (err) {
+                const tenantId = token.companyId || token.tenant_id;
+                logger.error(`Error fetching Xero ${logLabel} for tenant ${tenantId}:`, err.message);
+                return [];
+            }
+        }));
+        return results.flat();
+    }
+
+    /**
      * Fetch all organisation details from Xero across the calling user's
      * connected tenants only.
      * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
@@ -193,12 +261,7 @@ class XeroService {
         const results = await Promise.all(tokens.map(async (token) => {
             try {
                 const tenantId = token.companyId || token.tenant_id;
-                const accessToken = await XeroTokenManager.getValidToken(tenantId);
-                const headers = {
-                    Authorization:    `Bearer ${accessToken}`,
-                    'Xero-Tenant-Id': tenantId,
-                    Accept:           'application/json'
-                };
+                const headers = await XeroService._tenantHeaders(tenantId);
                 const res = await axios.get(CONSTANTS.XERO.ORGANISATION_URL, { headers });
                 const org = XeroMapper.toOrganisation(res.data);
                 if (org) {
@@ -222,38 +285,7 @@ class XeroService {
      * @returns {Promise<ContactDTO[]>}
      */
     static async getContacts(mail) {
-        const tokens = await XeroService.getAllTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const tenantId = token.companyId || token.tenant_id;
-                const accessToken = await XeroTokenManager.getValidToken(tenantId);
-                const headers = {
-                    Authorization:    `Bearer ${accessToken}`,
-                    'Xero-Tenant-Id': tenantId,
-                    Accept:           'application/json'
-                };
-
-                let orgName = token.companyName || tenantId;
-                try {
-                    const orgRes = await axios.get(CONSTANTS.XERO.ORGANISATION_URL, { headers });
-                    const orgObj = XeroMapper.toOrganisation(orgRes.data);
-                    if (orgObj && orgObj.name) orgName = orgObj.name;
-                } catch (_) {}
-
-                const response = await axios.get(CONSTANTS.XERO.CONTACTS_URL, { headers });
-                const contacts = XeroMapper.toContactList(response.data);
-                return contacts.map(c => ({
-                    ...c,
-                    clientId: tenantId,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const tenantId = token.companyId || token.tenant_id;
-                logger.error(`Error fetching Xero contacts for tenant ${tenantId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return XeroService._getEntityList(CONSTANTS.XERO.CONTACTS_URL, XeroMapper.toContactList, 'contacts', mail);
     }
 
     /**
@@ -263,38 +295,7 @@ class XeroService {
      * @returns {Promise<AccountDTO[]>}
      */
     static async getAccounts(mail) {
-        const tokens = await XeroService.getAllTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const tenantId = token.companyId || token.tenant_id;
-                const accessToken = await XeroTokenManager.getValidToken(tenantId);
-                const headers = {
-                    Authorization:    `Bearer ${accessToken}`,
-                    'Xero-Tenant-Id': tenantId,
-                    Accept:           'application/json'
-                };
-
-                let orgName = token.companyName || tenantId;
-                try {
-                    const orgRes = await axios.get(CONSTANTS.XERO.ORGANISATION_URL, { headers });
-                    const orgObj = XeroMapper.toOrganisation(orgRes.data);
-                    if (orgObj && orgObj.name) orgName = orgObj.name;
-                } catch (_) {}
-
-                const response = await axios.get(CONSTANTS.XERO.ACCOUNTS_URL, { headers });
-                const accounts = XeroMapper.toAccountList(response.data);
-                return accounts.map(a => ({
-                    ...a,
-                    clientId: tenantId,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const tenantId = token.companyId || token.tenant_id;
-                logger.error(`Error fetching Xero accounts for tenant ${tenantId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return XeroService._getEntityList(CONSTANTS.XERO.ACCOUNTS_URL, XeroMapper.toAccountList, 'accounts', mail);
     }
 
     /**
@@ -304,38 +305,12 @@ class XeroService {
      * @returns {Promise<ClassDTO[]>}
      */
     static async getClasses(mail) {
-        const tokens = await XeroService.getAllTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const tenantId = token.companyId || token.tenant_id;
-                const accessToken = await XeroTokenManager.getValidToken(tenantId);
-                const headers = {
-                    Authorization:    `Bearer ${accessToken}`,
-                    'Xero-Tenant-Id': tenantId,
-                    Accept:           'application/json'
-                };
-
-                let orgName = token.companyName || tenantId;
-                try {
-                    const orgRes = await axios.get(CONSTANTS.XERO.ORGANISATION_URL, { headers });
-                    const orgObj = XeroMapper.toOrganisation(orgRes.data);
-                    if (orgObj && orgObj.name) orgName = orgObj.name;
-                } catch (_) {}
-
-                const response = await axios.get(CONSTANTS.XERO.TRACKING_CATEGORIES_URL, { headers });
-                const classes = XeroMapper.toTrackingList(response.data, "class");
-                return classes.map(c => ({
-                    ...c,
-                    clientId: tenantId,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const tenantId = token.companyId || token.tenant_id;
-                logger.error(`Error fetching Xero classes for tenant ${tenantId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return XeroService._getEntityList(
+            CONSTANTS.XERO.TRACKING_CATEGORIES_URL,
+            data => XeroMapper.toTrackingList(data, "class"),
+            'classes',
+            mail
+        );
     }
 
     /**
@@ -345,38 +320,12 @@ class XeroService {
      * @returns {Promise<LocationDTO[]>}
      */
     static async getLocations(mail) {
-        const tokens = await XeroService.getAllTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const tenantId = token.companyId || token.tenant_id;
-                const accessToken = await XeroTokenManager.getValidToken(tenantId);
-                const headers = {
-                    Authorization:    `Bearer ${accessToken}`,
-                    'Xero-Tenant-Id': tenantId,
-                    Accept:           'application/json'
-                };
-
-                let orgName = token.companyName || tenantId;
-                try {
-                    const orgRes = await axios.get(CONSTANTS.XERO.ORGANISATION_URL, { headers });
-                    const orgObj = XeroMapper.toOrganisation(orgRes.data);
-                    if (orgObj && orgObj.name) orgName = orgObj.name;
-                } catch (_) {}
-
-                const response = await axios.get(CONSTANTS.XERO.TRACKING_CATEGORIES_URL, { headers });
-                const locations = XeroMapper.toTrackingList(response.data, "location");
-                return locations.map(l => ({
-                    ...l,
-                    clientId: tenantId,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const tenantId = token.companyId || token.tenant_id;
-                logger.error(`Error fetching Xero locations for tenant ${tenantId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return XeroService._getEntityList(
+            CONSTANTS.XERO.TRACKING_CATEGORIES_URL,
+            data => XeroMapper.toTrackingList(data, "location"),
+            'locations',
+            mail
+        );
     }
 
     // ── Self-contained Connections Management & Pulling ────────────────
@@ -387,8 +336,21 @@ class XeroService {
         return XeroService.PLAN_LIMITS[(plan || 'pro').toLowerCase()] ?? 10;
     }
 
+    /**
+     * Model + operator handles for the connection-management queries below.
+     * Resolved per call rather than at module load so the model registry is
+     * only touched once a query actually runs; require() caches, so this is
+     * free after the first call.
+     */
+    static _db() {
+        return {
+            XeroToken: require('../../core/database').XeroToken,
+            Op: require('sequelize').Op
+        };
+    }
+
     static async listConnections(mail) {
-        const { XeroToken } = require('../../core/database');
+        const { XeroToken } = XeroService._db();
         const xeroWhere = mail ? { mail } : {};
         const xeroTokens = await XeroToken.findAll({ where: xeroWhere });
 
@@ -406,8 +368,7 @@ class XeroService {
     }
 
     static async getConnectionStats(mail, plan) {
-        const { XeroToken } = require('../../core/database');
-        const { Op } = require('sequelize');
+        const { XeroToken, Op } = XeroService._db();
         const maxAllowed = XeroService.getMaxConnections(plan);
 
         const whereClause = { status: { [Op.ne]: 'Disconnected' } };
@@ -432,7 +393,7 @@ class XeroService {
      */
     static async disconnectConnection(companyId, mail) {
         if (!mail) return false;
-        const { XeroToken } = require('../../core/database');
+        const { XeroToken } = XeroService._db();
         const [updated] = await XeroToken.update(
             { status: 'Disconnected' },
             { where: { tenant_id: companyId, mail } }
@@ -447,8 +408,7 @@ class XeroService {
      */
     static async activateConnection(companyId, mail) {
         if (!mail) return false;
-        const { XeroToken } = require('../../core/database');
-        const { Op } = require('sequelize');
+        const { XeroToken, Op } = XeroService._db();
 
         // Selecting/switching to a connection re-activates it if it was
         // 'Disconnected', but must not resurrect 'Not Synced' to 'Active' —
@@ -475,7 +435,7 @@ class XeroService {
      */
     static async renameConnection(companyId, mail, companyName) {
         if (!mail) return false;
-        const { XeroToken } = require('../../core/database');
+        const { XeroToken } = XeroService._db();
         const [updated] = await XeroToken.update(
             { company_name: companyName },
             { where: { tenant_id: companyId, mail } }
@@ -494,8 +454,7 @@ class XeroService {
      */
     static async pullMasterData(companyId, tier, mail) {
         if (!mail) return null;
-        const { XeroToken } = require('../../core/database');
-        const { Op } = require('sequelize');
+        const { XeroToken, Op } = XeroService._db();
         const maxAllowed = XeroService.getMaxConnections(tier);
 
         // Include 'Not Synced' connections (not just 'Active') so a

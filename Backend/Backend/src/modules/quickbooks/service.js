@@ -97,16 +97,10 @@ class QuickBooksService {
         let realmId;
         let accessToken;
 
-        // ── TEMPORARY concurrency-verification instrumentation ──────────
-        // Logs the actual token-resolution + HTTP round trip timing for
-        // every QuickBooks query, tagged with entity/STARTPOSITION parsed
-        // straight out of the QBQL string, so REQUEST START timestamps
-        // from different calls (e.g. Customer @1, Vendor @1, Account @1
-        // fired from the same Promise.all) can be compared directly to
-        // prove — from real wall-clock timestamps, not code inspection —
-        // whether they were genuinely concurrent or serialized somewhere
-        // beneath the service layer (token lookup, DB pool, axios/agent,
-        // etc). Safe to delete once concurrency is confirmed.
+        // TEMPORARY concurrency-verification instrumentation: tags every
+        // query with its entity/STARTPOSITION so the [QB-HTTP] timestamps
+        // below prove whether concurrent calls really overlapped. Safe to
+        // delete once concurrency is confirmed.
         const qbEntityMatch = /FROM\s+(\w+)/i.exec(query);
         const qbPosMatch = /STARTPOSITION\s+(\d+)/i.exec(query);
         const qbLabel = `${qbEntityMatch ? qbEntityMatch[1] : 'query'}${qbPosMatch ? ` @${qbPosMatch[1]}` : ''}`;
@@ -301,30 +295,47 @@ class QuickBooksService {
     }
 
     /**
+     * Shared implementation behind getCustomers/getVendors/getAccounts/
+     * getClasses/getLocations. Queries one QBQL entity across every active
+     * token for `mail`, in parallel, and tags each record with the owning
+     * company's org name. A token whose query fails is logged and
+     * contributes no records rather than failing the whole call.
+     *
+     * @param {string} entityName - QBQL entity, e.g. "Customer".
+     * @param {Function} mapperFn - QuickBooksMapper.toXList, e.g. toCustomerList.
+     * @param {string} logLabel - Plural label used in the per-token error log.
+     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @returns {Promise<object[]>}
+     */
+    static async _getEntityList(entityName, mapperFn, logLabel, mail) {
+        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
+        const results = await Promise.all(tokens.map(async (token) => {
+            try {
+                const raw = await QuickBooksService.queryAll(entityName, token);
+                const list = mapperFn(raw);
+                const { orgName } = await QuickBooksService.getCompanyMetadata(token);
+                return list.map(item => ({
+                    ...item,
+                    clientId: orgName,
+                    clientName: orgName
+                }));
+            } catch (err) {
+                const realmId = token.companyId || token.realm_id;
+                logger.error(`Error getting ${logLabel} for realm ${realmId}:`, err.message);
+                return [];
+            }
+        }));
+        return results.flat();
+    }
+
+    /**
      * Fetch all customers and return clean CustomerDTOs across the calling
      * user's connected companies only.
      * @param {string} mail - Owning user's email; scopes which companies are queried.
      * @returns {CustomerDTO[]}
      */
     static async getCustomers(mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const raw = await QuickBooksService.queryAll('Customer', token);
-                const list = QuickBooksMapper.toCustomerList(raw);
-                const { orgName } = await QuickBooksService.getCompanyMetadata(token);
-                return list.map(c => ({
-                    ...c,
-                    clientId: orgName,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const realmId = token.companyId || token.realm_id;
-                logger.error(`Error getting customers for realm ${realmId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return QuickBooksService._getEntityList('Customer', QuickBooksMapper.toCustomerList, 'customers', mail);
     }
 
     /**
@@ -334,24 +345,7 @@ class QuickBooksService {
      * @returns {VendorDTO[]}
      */
     static async getVendors(mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const raw = await QuickBooksService.queryAll('Vendor', token);
-                const list = QuickBooksMapper.toVendorList(raw);
-                const { orgName } = await QuickBooksService.getCompanyMetadata(token);
-                return list.map(v => ({
-                    ...v,
-                    clientId: orgName,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const realmId = token.companyId || token.realm_id;
-                logger.error(`Error getting vendors for realm ${realmId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return QuickBooksService._getEntityList('Vendor', QuickBooksMapper.toVendorList, 'vendors', mail);
     }
 
     /**
@@ -361,24 +355,7 @@ class QuickBooksService {
      * @returns {AccountDTO[]}
      */
     static async getAccounts(mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const raw = await QuickBooksService.queryAll('Account', token);
-                const list = QuickBooksMapper.toAccountList(raw);
-                const { orgName } = await QuickBooksService.getCompanyMetadata(token);
-                return list.map(a => ({
-                    ...a,
-                    clientId: orgName,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const realmId = token.companyId || token.realm_id;
-                logger.error(`Error getting accounts for realm ${realmId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return QuickBooksService._getEntityList('Account', QuickBooksMapper.toAccountList, 'accounts', mail);
     }
 
     /**
@@ -388,24 +365,7 @@ class QuickBooksService {
      * @returns {ClassDTO[]}
      */
     static async getClasses(mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const raw = await QuickBooksService.queryAll('Class', token);
-                const list = QuickBooksMapper.toClassList(raw);
-                const { orgName } = await QuickBooksService.getCompanyMetadata(token);
-                return list.map(c => ({
-                    ...c,
-                    clientId: orgName,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const realmId = token.companyId || token.realm_id;
-                logger.error(`Error getting classes for realm ${realmId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return QuickBooksService._getEntityList('Class', QuickBooksMapper.toClassList, 'classes', mail);
     }
 
     /**
@@ -415,24 +375,7 @@ class QuickBooksService {
      * @returns {LocationDTO[]}
      */
     static async getLocations(mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
-        const results = await Promise.all(tokens.map(async (token) => {
-            try {
-                const raw = await QuickBooksService.queryAll('Department', token);
-                const list = QuickBooksMapper.toLocationList(raw);
-                const { orgName } = await QuickBooksService.getCompanyMetadata(token);
-                return list.map(l => ({
-                    ...l,
-                    clientId: orgName,
-                    clientName: orgName
-                }));
-            } catch (err) {
-                const realmId = token.companyId || token.realm_id;
-                logger.error(`Error getting departments for realm ${realmId}:`, err.message);
-                return [];
-            }
-        }));
-        return results.flat();
+        return QuickBooksService._getEntityList('Department', QuickBooksMapper.toLocationList, 'departments', mail);
     }
 
     // ── Paginated (batch) entity fetchers ───────────────────────────────
@@ -506,27 +449,18 @@ class QuickBooksService {
 
     /**
      * Fetches every page of the 5 paginated entities (Customer, Vendor,
-     * Account, Class, Department) for a SINGLE token, `pageSize` records
-     * at a time — the same concurrent-per-batch shape as exportMasterData's
-     * controller loop (all 5 requests for the current batch fire together
-     * via Promise.all, and the next batch only starts once that one
-     * resolves), just scoped to one token instead of driving multi-token
-     * exhaustion tracking across a whole connection list.
+     * Account, Class, Department) for a SINGLE token, `pageSize` records at
+     * a time: all still-active entities of a batch fire together via
+     * Promise.all and the next batch only starts once that one resolves.
+     * queryAll's own internal paging (MAXRESULTS up to 1000) cannot produce
+     * that batch-by-batch, 10-records-at-a-time shape, which is why the
+     * bulk export path uses this instead.
      *
-     * This is what pullMasterData (the endpoint the Excel Add-in's Pull
-     * Master Data / Refresh Schedule buttons actually call) uses instead
-     * of firing one Promise.all of 5 full recursive queryAll() calls —
-     * queryAll's own internal paging (MAXRESULTS up to 1000) never
-     * produced the batch-by-batch, 10-records-at-a-time concurrency the
-     * QuickBooks batch spec calls for, even though the 5 entity types
-     * were already running concurrently relative to each other.
-     *
-     * Each entity independently drops out of later batches once it
-     * returns a short page — e.g. Vendor can stop after 15 records while
-     * Customer, with 47, keeps paging — without affecting the others.
-     * Returns QueryResponse-shaped objects so the existing
+     * Each entity independently drops out of later batches once it returns
+     * a short page — Vendor can stop after 15 records while Customer, with
+     * 47, keeps paging. Returns QueryResponse-shaped objects so the
      * QuickBooksMapper.toXList(raw, lastSyncedAt) calls in pullMasterData
-     * work completely unchanged (isNew/isUpdated flagging included).
+     * work unchanged (isNew/isUpdated flagging included).
      *
      * @param {object} token
      * @param {number} [pageSize=10]
@@ -545,16 +479,10 @@ class QuickBooksService {
             batchNumber += 1;
             const batchStart = Date.now();
 
-            // ── TEMPORARY diagnostic logging ─────────────────────────
-            // Every still-active entity's START line is logged here,
-            // synchronously, BEFORE any of this batch's queryPage()
-            // promises are created/awaited — so all of a batch's START
-            // lines print together as one group, in one synchronous pass,
-            // regardless of how long the underlying HTTP responses take.
-            // If a batch's active entities were somehow being awaited one
-            // at a time instead of together, their START lines would be
-            // interleaved with RESPONSE lines from earlier entities in
-            // the same batch — this makes that failure mode visible.
+            // TEMPORARY diagnostic logging: every still-active entity's
+            // START line prints synchronously BEFORE this batch's
+            // queryPage() promises are created, so interleaved START and
+            // RESPONSE lines would expose a batch being awaited serially.
             active.forEach(entityName => {
                 console.log(`[BATCH ${batchNumber}][${entityLabel[entityName]}] START position=${startPosition} limit=${pageSize} realm=${realmId}`);
             });
@@ -608,21 +536,16 @@ class QuickBooksService {
      * by a caller-supplied per-entity cursor rather than an internal
      * while loop.
      *
-     * The entities are processed STRICTLY SEQUENTIALLY, in
-     * SEQUENTIAL_ENTITY_ORDER: Accounts is paged 10 at a time until it
-     * is completely finished, and only then does Classes begin — from
-     * ITS first record (position 1), not from wherever Accounts stopped.
-     * Then Locations, then Customers, then Vendors, each on the same
-     * "start at 1, drain fully, hand over" basis. At most one entity's
-     * request is ever in flight, so batches from two different APIs can
-     * never overlap. (Contrast _fetchAllPaginatedEntitiesForToken, which
-     * still runs all five concurrently for the bulk export path.)
+     * Entities are processed STRICTLY SEQUENTIALLY, in
+     * SEQUENTIAL_ENTITY_ORDER, each on a "start at position 1, drain
+     * fully, hand over" basis. At most one entity's request is ever in
+     * flight, so two APIs can never overlap. (Contrast
+     * _fetchAllPaginatedEntitiesForToken, which runs all five
+     * concurrently for the bulk export path.)
      *
      * A click never returns an empty batch just because the entity it
-     * landed on happened to be exhausted: when an entity's page comes
-     * back with zero records, its cursor is closed out and the SAME
-     * click moves on to the next entity in the order, so every click
-     * either writes real records or reports the whole cycle done.
+     * landed on was exhausted: a zero-record page closes that entity's
+     * cursor and the SAME click moves on to the next entity in the order.
      *
      * @param {object} token
      * @param {{[entity: string]: {position: number, done: boolean}}|null} priorCursor
@@ -708,8 +631,21 @@ class QuickBooksService {
         return QuickBooksService.PLAN_LIMITS[(plan || 'pro').toLowerCase()] ?? 10;
     }
 
+    /**
+     * Model + operator handles for the connection-management queries below.
+     * Resolved per call rather than at module load so the model registry is
+     * only touched once a query actually runs; require() caches, so this is
+     * free after the first call.
+     */
+    static _db() {
+        return {
+            QuickBooksToken: require('../../core/database').QuickBooksToken,
+            Op: require('sequelize').Op
+        };
+    }
+
     static async listConnections(mail) {
-        const { QuickBooksToken } = require('../../core/database');
+        const { QuickBooksToken } = QuickBooksService._db();
         const qbWhere = mail ? { mail } : {};
         const qbTokens = await QuickBooksToken.findAll({ where: qbWhere });
 
@@ -724,8 +660,7 @@ class QuickBooksService {
     }
 
     static async getConnectionStats(mail, plan) {
-        const { QuickBooksToken } = require('../../core/database');
-        const { Op } = require('sequelize');
+        const { QuickBooksToken, Op } = QuickBooksService._db();
         const maxAllowed = QuickBooksService.getMaxConnections(plan);
 
         const whereClause = { status: { [Op.ne]: 'Disconnected' } };
@@ -750,7 +685,7 @@ class QuickBooksService {
      */
     static async disconnectConnection(companyId, mail) {
         if (!mail) return false;
-        const { QuickBooksToken } = require('../../core/database');
+        const { QuickBooksToken } = QuickBooksService._db();
         const [updated] = await QuickBooksToken.update(
             { status: 'Disconnected' },
             { where: { realm_id: companyId, mail } }
@@ -765,8 +700,7 @@ class QuickBooksService {
      */
     static async activateConnection(companyId, mail) {
         if (!mail) return false;
-        const { QuickBooksToken } = require('../../core/database');
-        const { Op } = require('sequelize');
+        const { QuickBooksToken, Op } = QuickBooksService._db();
 
         // Selecting/switching to a connection re-activates it if it was
         // 'Disconnected', but must not resurrect 'Not Synced' to 'Active' —
@@ -793,7 +727,7 @@ class QuickBooksService {
      */
     static async renameConnection(companyId, mail, companyName) {
         if (!mail) return false;
-        const { QuickBooksToken } = require('../../core/database');
+        const { QuickBooksToken } = QuickBooksService._db();
         const [updated] = await QuickBooksToken.update(
             { company_name: companyName },
             { where: { realm_id: companyId, mail } }
@@ -823,8 +757,7 @@ class QuickBooksService {
      */
     static async pullMasterData(companyId, tier, mail, cursorByCompany) {
         if (!mail) return null;
-        const { QuickBooksToken } = require('../../core/database');
-        const { Op } = require('sequelize');
+        const { QuickBooksToken, Op } = QuickBooksService._db();
         const maxAllowed = QuickBooksService.getMaxConnections(tier);
 
         // Exclude 'Disconnected' connections from the bulk (no companyId)
