@@ -48,7 +48,7 @@ export function bindDataActionHandlers() {
     // Pull Master Data ALWAYS STARTS OVER. It is the "begin a new
     // pull" button, not a "continue" button: every click discards
     // the stored pagination cursor, wipes the sheet's master-data
-    // range, and asks the backend for the first 10 records of the
+    // range, and asks the backend for the first 100 records of the
     // first API — no matter how far a previous cycle had already
     // progressed. Clicking it halfway through a cycle is therefore
     // indistinguishable from clicking it for the very first time,
@@ -57,16 +57,16 @@ export function bindDataActionHandlers() {
     // click, so neither can outlive the other.
     //
     // Refresh Schedule (further below) is the CONTINUE button: it
-    // reads that same stored cursor and asks for the NEXT 10
+    // reads that same stored cursor and asks for the NEXT 100
     // records, appending them.
     //
-    // Either way a click fetches exactly one batch of 10 records
+    // Either way a click fetches exactly one batch of 100 records
     // of ONE entity. The backend walks the entities strictly one
     // at a time — Accounts first, 10 at a time until Accounts is
     // completely finished, then Classes from its own first record,
     // then Locations, then Customers, then Vendors — so no two
     // APIs are ever fetched at the same time. The backend decides
-    // what "one batch" contains via a real MAXRESULTS=10
+    // what "one batch" contains via a real MAXRESULTS=100
     // QuickBooks request for that single entity; this handler
     // never fetches everything and slices it client-side.
     const handlePullClick = async (event) => {
@@ -136,9 +136,9 @@ export function bindDataActionHandlers() {
             // repeat cycle. Exactly ONE /api/pull-master-data
             // request was made above (ONE QuickBooks request
             // inside it, for the single entity currently being
-            // drained, max 10 records); write just that response
+            // drained, max 100 records); write just that response
             // and stop. The next batch — whether it's the same
-            // entity's next 10 records or the first 10 of the next
+            // entity's next 100 records or the first 100 of the next
             // entity in the order — is only fetched on the NEXT
             // click, never automatically within this one.
             await ExcelService.appendManualBatch(provider, batch);
@@ -318,7 +318,7 @@ export function bindDataActionHandlers() {
             // Refresh Schedule is the CONTINUE half of the pair:
             // it reads the same stored per-provider/company cursor
             // Pull Master Data writes (see handlePullClick above)
-            // and asks for the NEXT batch of 10 records of the ONE
+            // and asks for the NEXT batch of 100 records of the ONE
             // entity currently being drained, appending it to
             // what's already on the sheet — 1-10, then 11-20, then
             // 21-30, and so on through the fixed Accounts ->
@@ -361,9 +361,9 @@ export function bindDataActionHandlers() {
             // repeat cycle. Exactly ONE /api/pull-master-data
             // request was made above (ONE QuickBooks request
             // inside it, for the single entity currently being
-            // drained, max 10 records); write just that response
+            // drained, max 100 records); write just that response
             // and stop. The next batch — whether it's the same
-            // entity's next 10 records or the first 10 of the next
+            // entity's next 100 records or the first 100 of the next
             // entity in the order — is only fetched on the NEXT
             // click, never automatically within this one.
             await ExcelService.appendManualBatch(provider, batch);

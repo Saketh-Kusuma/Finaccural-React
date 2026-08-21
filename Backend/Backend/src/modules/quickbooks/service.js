@@ -514,7 +514,7 @@ class QuickBooksService {
 
     /**
      * Fixed order in which the paginated master-data APIs are pulled.
-     * ONE API is fully drained (10 records at a time, click by click)
+     * ONE API is fully drained (PULL_PAGE_SIZE records at a time, click by click)
      * before the next one is even touched, and each API always starts
      * back at its own first record — QuickBooks `STARTPOSITION 1` — no
      * matter how far the previous API had paged.
@@ -525,11 +525,26 @@ class QuickBooksService {
     static SEQUENTIAL_ENTITY_ORDER = ['Account', 'Class', 'Department', 'Customer', 'Vendor'];
 
     /**
+     * Records fetched per Pull Master Data / Refresh Schedule click.
+     *
+     * One click still means exactly one QuickBooks request for exactly one
+     * entity — this only changes how much that single request asks for
+     * (MAXRESULTS), so a full dataset is drained in ~10x fewer clicks than
+     * the previous size of 10. QuickBooks caps MAXRESULTS at 1000.
+     *
+     * Safe to change mid-cycle: a cursor stored by the add-in under the old
+     * size holds an absolute STARTPOSITION, so the next click simply
+     * continues from that position with the new page size. No records are
+     * skipped or repeated.
+     */
+    static PULL_PAGE_SIZE = 100;
+
+    /**
      * Fetches exactly ONE page (up to pageSize records) for exactly ONE
      * entity per call — the click-scoped counterpart to
      * _fetchAllPaginatedEntitiesForToken above, which loops internally
      * until every entity is exhausted in one call. This is what lets
-     * pullMasterData make exactly one real MAXRESULTS=10 QuickBooks
+     * pullMasterData make exactly one real MAXRESULTS=PULL_PAGE_SIZE QuickBooks
      * request per Pull Master Data / Refresh Schedule click, instead of
      * silently fetching the whole dataset in one HTTP call and only
      * showing part of it — the click IS the pagination trigger, driven
@@ -552,14 +567,14 @@ class QuickBooksService {
      *   Per-entity cursor returned by this function on a previous click
      *   for this same token, or null/undefined to start a fresh cycle
      *   (Accounts at position 1, nothing done yet).
-     * @param {number} [pageSize=10]
+     * @param {number} [pageSize=PULL_PAGE_SIZE]
      * @returns {Promise<{
      *   recordsByEntity: { Customer: object[], Vendor: object[], Account: object[], Class: object[], Department: object[] },
      *   cursor: {[entity: string]: {position: number, done: boolean}},
      *   isDone: boolean
      * }>}
      */
-    static async _fetchOnePageForToken(token, priorCursor, pageSize = 10) {
+    static async _fetchOnePageForToken(token, priorCursor, pageSize = QuickBooksService.PULL_PAGE_SIZE) {
         const entities = QuickBooksService.SEQUENTIAL_ENTITY_ORDER;
         const entityLabel = { Account: 'Accounts', Class: 'Classes', Department: 'Locations', Customer: 'Customers', Vendor: 'Vendors' };
         const realmId = token.companyId || token.realm_id;
@@ -746,7 +761,7 @@ class QuickBooksService {
      * @param {{[companyId: string]: {[entity: string]: {position: number, done: boolean}}}} [cursorByCompany]
      *   Per-company, per-entity pagination cursor returned by this same
      *   function on a previous click, or {}/undefined to start a fresh
-     *   cycle. Each call fetches exactly ONE page (up to 10 records) for
+     *   cycle. Each call fetches exactly ONE page (up to PULL_PAGE_SIZE records) for
      *   exactly ONE entity per token, walking the APIs strictly in order
      *   — Accounts, then Classes, then Locations, then Customers, then
      *   Vendors, each drained completely and each starting from its own
@@ -787,7 +802,7 @@ class QuickBooksService {
                 const comp = QuickBooksMapper.toCompanyInfo(rawComp);
                 const companyList = comp ? [{ ...comp, id: token.companyId }] : [];
 
-                // Exactly ONE page (up to 10 records) of exactly ONE
+                // Exactly ONE page (up to PULL_PAGE_SIZE records) of exactly ONE
                 // entity for THIS click — the APIs are drained one at a
                 // time in a fixed order, so four of the five lists below
                 // are always empty on any given click. See
@@ -796,7 +811,7 @@ class QuickBooksService {
                 // per company, refetched every click regardless of where
                 // the entity pagination cursor is.
                 const priorCursor = safeCursorByCompany[token.companyId] || null;
-                const pageResult = await QuickBooksService._fetchOnePageForToken(token, priorCursor, 10);
+                const pageResult = await QuickBooksService._fetchOnePageForToken(token, priorCursor, QuickBooksService.PULL_PAGE_SIZE);
                 const pagedEntities = pageResult.recordsByEntity;
                 const rawCust  = { QueryResponse: { Customer:   pagedEntities.Customer } };
                 const rawVend  = { QueryResponse: { Vendor:     pagedEntities.Vendor } };

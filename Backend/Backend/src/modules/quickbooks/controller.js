@@ -263,7 +263,7 @@ class QuickbooksController {
      */
     exportMasterData = asyncHandler(async (req, res, next) => {
         const mail = req.user.email;
-        const BATCH_SIZE = 10;
+        const BATCH_SIZE = 100;
 
         const { tokens: allTokens, company, orgNameByTokenId } =
             await QuickBooksService.getCompanyInfoAndOrgNames(mail)
@@ -486,7 +486,7 @@ class QuickbooksController {
      * response body. Omitting it (or sending {}) starts a fresh cycle at
      * Accounts, position 1.
      *
-     * Each call fetches exactly ONE page (up to 10 records) for exactly
+     * Each call fetches exactly ONE page (up to 100 records) for exactly
      * ONE entity — the entities are processed sequentially, in the order
      * Accounts -> Classes -> Locations -> Customers -> Vendors, and an
      * entity is drained completely before the next one starts (from its

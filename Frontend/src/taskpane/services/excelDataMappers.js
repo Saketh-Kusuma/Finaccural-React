@@ -125,7 +125,7 @@ function flattenChangedMasterDataRecords(data) {
  * order/precedence writeMasterData writes in — which is also the
  * order the backend drains the APIs in. This is what a single Pull
  * Master Data / Refresh Schedule click's one-page server response
- * (up to 10 records, of ONE entity only — see
+ * (up to 100 records, of ONE entity only — see
  * ApiService.fetchMasterData's `cursor` param) gets turned into
  * before being handed to ExcelService.appendManualBatch; the other
  * four categories are simply empty on that click.

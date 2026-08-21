@@ -261,7 +261,7 @@ const ApiService = {
      * @param {object|null} [cursor] - Per-entity pagination cursor
      *   returned as `cursor` on a previous call, or omit/null to start
      *   a fresh pull cycle. The backend fetches exactly ONE page (up
-     *   to 10 records) of exactly ONE entity for THIS call only — the
+     *   to 100 records) of exactly ONE entity for THIS call only — the
      *   entities are drained one at a time, in the fixed order
      *   Accounts -> Classes -> Locations -> Customers -> Vendors — so
      *   four of the five record arrays come back empty on any given
