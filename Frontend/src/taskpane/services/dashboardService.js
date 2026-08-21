@@ -489,7 +489,12 @@ const DashboardService = {
                                 e.stopPropagation();
                                 const reconnectPlatform = (c.platform || "quickbooks").toLowerCase();
                                 this.showStatus("Launching re-authorization...", "success", null, reconnectPlatform);
-                                this.launchERPOAuth(reconnectPlatform);
+                                // Pass the company this button belongs to, so
+                                // the backend can hold the flow to it: picking
+                                // a different company in the provider's
+                                // account chooser must fail rather than being
+                                // accepted as a new connection.
+                                this.launchERPOAuth(reconnectPlatform, c.companyId);
                                 return;
                             }
                             if (isDisconnected) {

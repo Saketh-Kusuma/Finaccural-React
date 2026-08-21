@@ -68,7 +68,12 @@ const connectionStatsQuery = Joi.object({
 
 // GET /api/quickbooks/connect?tier=... , GET /api/xero/connect?tier=...
 const erpConnectQuery = Joi.object({
-    tier: Joi.string().trim().lowercase().valid('trial', 'basic', 'standard', 'pro').default('pro')
+    tier: Joi.string().trim().lowercase().valid('trial', 'basic', 'standard', 'pro').default('pro'),
+    // Present only when the user clicked "Reconnect" on one specific
+    // company: the ERP company/tenant id the resulting authorization is
+    // pinned to. Bounded here so a hostile value can't reach the ownership
+    // lookup in the controller as something other than a plain id string.
+    reconnectId: Joi.string().trim().max(255).optional()
 }).unknown(true); // OAuth connect URLs may legitimately carry other client-added params
 
 // POST /api/admin/login

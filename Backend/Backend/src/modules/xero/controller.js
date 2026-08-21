@@ -4,7 +4,7 @@ const querystring = require('querystring');
 const config      = require('../../core/config');
 const CONSTANTS   = require('../../core/constants');
 const logger      = require('../../core/logger');
-const { generateOAuthState } = require('../../core/helpers');
+const { generateOAuthState, renderOAuthBlockedPage } = require('../../core/helpers');
 const XeroService         = require('./service');
 const XeroTokenRepository = require('./repository');
 const { ValidationError } = require('../../core/errors/AppError');
@@ -40,8 +40,6 @@ class XeroController {
         const { XeroToken } = require('../../core/database');
         const mail = req.user.email;
         const { Op } = require('sequelize');
-        const whereClause = { status: { [Op.ne]: 'Disconnected' }, mail };
-        const xeroCount = await XeroToken.count({ where: whereClause });
         const tier = (req.query.tier || 'pro').toLowerCase();
 
         let maxAllowed = 10;
@@ -49,18 +47,40 @@ class XeroController {
         else if (tier === 'basic') maxAllowed = 1;
         else if (tier === 'standard') maxAllowed = 3;
 
-        if (xeroCount >= maxAllowed) {
-            return res.send(`
-                    <html>
-                        <body style="font-family:sans-serif; text-align:center; padding: 40px; background:#fff1f2; color:#9f1239;">
-                            <div style="font-size: 50px; margin-bottom: 20px;">⚠️</div>
-                            <h2>Connection Limit Reached</h2>
-                            <p style="font-size: 14px; color: #4b5563;">Your subscription tier (${tier.toUpperCase()}) allows a maximum of ${maxAllowed} connected company.</p>
-                            <p style="font-size: 14px; color: #4b5563;">Please disconnect an existing company or upgrade your plan to connect more.</p>
-                            <button onclick="window.close()" style="margin-top: 20px; padding:10px 20px; background:#be123c; color:white; border:none; border-radius:5px; cursor:pointer; font-weight: bold;">Close Window</button>
-                        </body>
-                    </html>
-                `);
+        // ?reconnectId=<tenantId> is appended by the task pane when the user
+        // clicked "Reconnect" on one specific disconnected organisation.
+        // Parked in the session so the rest of the flow compares against the
+        // intent the user actually expressed, not anything the provider or
+        // the selection page hands back.
+        const reconnectId = String(req.query.reconnectId || '').trim() || null;
+
+        if (reconnectId) {
+            const reconnectTarget = await XeroToken.findOne({ where: { tenant_id: reconnectId, mail } });
+            if (!reconnectTarget) {
+                return res.send(renderOAuthBlockedPage({
+                    title: 'Organisation Not Found',
+                    lines: [
+                        'The organisation you tried to reconnect is no longer part of your account.',
+                        'Please reload the add-in and try again.'
+                    ]
+                }));
+            }
+        } else {
+            // A reconnect restores an organisation that already holds one of
+            // the plan's slots, so only a genuinely new connection is
+            // measured against the limit here.
+            const whereClause = { status: { [Op.ne]: 'Disconnected' }, mail };
+            const xeroCount = await XeroToken.count({ where: whereClause });
+
+            if (xeroCount >= maxAllowed) {
+                return res.send(renderOAuthBlockedPage({
+                    title: 'Connection Limit Reached',
+                    lines: [
+                        `Your subscription tier (${tier.toUpperCase()}) allows a maximum of ${maxAllowed} connected company.`,
+                        'Please disconnect an existing company or upgrade your plan to connect more.'
+                    ]
+                }));
+            }
         }
 
         const state = generateOAuthState();
@@ -68,6 +88,7 @@ class XeroController {
         req.session.user_mail  = mail;
         req.session.xero_tier  = tier;
         req.session.xero_max_allowed = maxAllowed;
+        req.session.xero_reconnect_id = reconnectId;
 
         const params = {
             response_type: 'code',
@@ -94,9 +115,32 @@ class XeroController {
             const mail        = req.session?.user_mail || req.session?.admin?.email || req.session?.googleUser?.email || null;
             const tier        = req.session?.xero_tier || 'pro';
             const maxAllowed  = req.session?.xero_max_allowed || 10;
+            const reconnectId = req.session?.xero_reconnect_id || null;
 
             // Exchange code → tokens, fetch all orgs (no DB writes yet)
-            const { tokens, tenants } = await XeroService.exchangeTokensOnly(code);
+            const { tokens, tenants: allTenants } = await XeroService.exchangeTokensOnly(code);
+
+            // Strict reconnect validation, part one. The user asked to
+            // restore one specific organisation, so the selection page must
+            // not offer any other — otherwise "Reconnect" becomes a second,
+            // unmetered door into "Add Company". If Xero didn't return that
+            // organisation at all, the user authorized the wrong Xero
+            // account and there is nothing here to reconnect.
+            let tenants = allTenants;
+            if (reconnectId) {
+                tenants = allTenants.filter(t => String(t.tenantId) === String(reconnectId));
+                if (tenants.length === 0) {
+                    delete req.session.xero_reconnect_id;
+                    return res.send(renderOAuthBlockedPage({
+                        title: 'Invalid Company Selected',
+                        icon: '🚫',
+                        lines: [
+                            'You started a reconnect for one specific organisation, but it was not among the organisations you authorized in Xero.',
+                            'Please click Reconnect again and grant access to the same organisation.'
+                        ]
+                    }));
+                }
+            }
 
             if (tenants.length === 0) {
                 return res.status(400).send(`
@@ -543,6 +587,22 @@ class XeroController {
             throw new ValidationError('Session expired. Please reconnect Xero.');
         }
 
+        // Strict reconnect validation, part two. The callback already
+        // narrowed the selection page to the single organisation being
+        // reconnected, but this endpoint is a plain POST the client fully
+        // controls — so the same rule is re-asserted against the session's
+        // stored intent rather than trusting the body it receives.
+        const reconnectId = req.session?.xero_reconnect_id || null;
+        if (reconnectId) {
+            const isExactTarget = selectedTenantIds.length === 1 &&
+                String(selectedTenantIds[0]) === String(reconnectId);
+            if (!isExactTarget) {
+                throw new ValidationError(
+                    'Invalid company selected. A reconnect can only restore the organisation it was started for.'
+                );
+            }
+        }
+
         const { XeroToken } = require('../../core/database');
         const whereClause = mail ? { mail } : {};
         const otherCount = await XeroToken.count({
@@ -567,6 +627,7 @@ class XeroController {
         delete req.session.xero_pending_tokens;
         delete req.session.xero_pending_tenants;
         delete req.session.xero_pending_mail;
+        delete req.session.xero_reconnect_id;
 
         return res.json({ success: true, connected: selectedTenantIds.length });
     });

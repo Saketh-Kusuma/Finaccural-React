@@ -40,26 +40,50 @@ class QuickBooksTokenRepository {
     }
 
     /**
-     * Deletes only the given user's QuickBooks tokens. `mail` is required —
-     * without it this used to `truncate` the entire table (every user's
-     * connections), which is exactly the cross-account data loss this
-     * scoping exists to prevent, so a missing `mail` is now a no-op rather
-     * than a footgun.
+     * Disconnects every one of the given user's QuickBooks connections and
+     * wipes their credentials. `mail` is required — without it this used to
+     * `truncate` the entire table (every user's connections), which is
+     * exactly the cross-account data loss this scoping exists to prevent,
+     * so a missing `mail` is now a no-op rather than a footgun.
+     *
+     * The rows are deliberately kept rather than destroyed. Plan limits are
+     * counted per company ever connected (see quickbooksCallback), so
+     * deleting the rows here would hand the user a fresh allowance every
+     * time they disconnected — the exact loophole the lifetime count
+     * closes. Keeping them also preserves the "Reconnect" affordance for
+     * each company in the task pane, matching per-connection disconnect
+     * (QuickBooksService.disconnectConnection).
      * @param {string} mail
      */
     static async clearTokens(mail) {
         if (!mail) return 0;
-        return await QuickBooksToken.destroy({ where: { mail } });
+        const [updated] = await QuickBooksToken.update({
+            status: 'Disconnected',
+            access_token: '',
+            refresh_token: '',
+            expires_in: 0,
+            x_refresh_token_expires_in: 0,
+            session_info: null
+        }, { where: { mail } });
+        return updated;
     }
 
     /**
-     * Deletes only the given user's Xero tokens. Same `mail`-required
-     * safety rule as clearTokens() above.
+     * Disconnects every one of the given user's Xero connections. Same
+     * `mail`-required safety rule, and the same keep-the-row reasoning, as
+     * clearTokens() above.
      * @param {string} mail
      */
     static async clearXeroTokens(mail) {
         if (!mail) return 0;
-        return await XeroToken.destroy({ where: { mail } });
+        const [updated] = await XeroToken.update({
+            status: 'Disconnected',
+            access_token: '',
+            refresh_token: '',
+            expires_in: 0,
+            session_info: null
+        }, { where: { mail } });
+        return updated;
     }
 }
 

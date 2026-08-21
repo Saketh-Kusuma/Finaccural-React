@@ -53,16 +53,31 @@ class XeroTokenRepository {
     }
 
     /**
-     * Deletes only the given user's Xero tokens. `mail` is required —
-     * without it this used to `truncate` the entire table (every user's
-     * connections), which is exactly the cross-account data loss this
-     * scoping exists to prevent, so a missing `mail` is now a no-op rather
-     * than a footgun.
+     * Disconnects every one of the given user's Xero connections and wipes
+     * their credentials. `mail` is required — without it this used to
+     * `truncate` the entire table (every user's connections), which is
+     * exactly the cross-account data loss this scoping exists to prevent,
+     * so a missing `mail` is now a no-op rather than a footgun.
+     *
+     * The rows are deliberately kept rather than destroyed. Plan limits are
+     * counted per organisation ever connected (see xeroCallback /
+     * selectCompanies), so deleting the rows here would hand the user a
+     * fresh allowance every time they disconnected — the exact loophole
+     * that lifetime count closes. Keeping them also preserves the
+     * "Reconnect" affordance in the task pane, matching the per-connection
+     * disconnect path (XeroTokenRepository.markDisconnected).
      * @param {string} mail
      */
     static async clearTokens(mail) {
         if (!mail) return 0;
-        return await XeroToken.destroy({ where: { mail } });
+        const [updated] = await XeroToken.update({
+            status: 'Disconnected',
+            access_token: '',
+            refresh_token: '',
+            expires_in: 0,
+            session_info: null
+        }, { where: { mail } });
+        return updated;
     }
 }
 

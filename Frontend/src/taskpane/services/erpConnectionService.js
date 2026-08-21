@@ -17,9 +17,17 @@ export function createErpConnection() {
 
         /**
          * Launches the ERP OAuth popup for the given provider.
+         *
          * @param {"quickbooks"|"xero"} provider
+         * @param {string|null} [reconnectId] The company/tenant id the user
+         *   explicitly clicked "Reconnect" on. Passed through to the backend
+         *   as ?reconnectId so it can refuse the authorization if a
+         *   different company is chosen in the provider's own account
+         *   picker — a reconnect must restore the company it was started
+         *   for, never quietly add a new one. Omitted (null) for a normal
+         *   "Add Company" flow.
          */
-        launchERPOAuth(provider) {
+        launchERPOAuth(provider, reconnectId = null) {
             // Reentrancy guard — the redirect card's overlay blocks clicks
             // underneath it once shown, but this also covers any
             // programmatic re-entry (double keydown, a second call before
@@ -35,9 +43,10 @@ export function createErpConnection() {
 
             const encodedMail = encodeURIComponent(AppState.userEmail || "");
             const tokenParam = AppState.jwtToken ? `&token=${encodeURIComponent(AppState.jwtToken)}` : "";
+            const reconnectParam = reconnectId ? `&reconnectId=${encodeURIComponent(reconnectId)}` : "";
             const connectUrl = isQB
-                ? `${ApiService.BASE}/api/quickbooks/connect/?tier=${AppState.currentTier}&mail=${encodedMail}${tokenParam}`
-                : `${ApiService.BASE}/api/xero/connect?tier=${AppState.currentTier}&mail=${encodedMail}${tokenParam}`;
+                ? `${ApiService.BASE}/api/quickbooks/connect/?tier=${AppState.currentTier}&mail=${encodedMail}${tokenParam}${reconnectParam}`
+                : `${ApiService.BASE}/api/xero/connect?tier=${AppState.currentTier}&mail=${encodedMail}${tokenParam}${reconnectParam}`;
 
             // Popup opening is not a completed action — only logged, never toasted.
             this.addLog(`Opening ${pName} sign-in...`);
