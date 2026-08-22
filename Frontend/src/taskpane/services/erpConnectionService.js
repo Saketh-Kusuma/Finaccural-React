@@ -410,7 +410,7 @@ export function createErpConnection() {
 
             // Now re-render — all companies should be Disconnected, so it shows the disconnected view
             this.renderERPSection();
-            this.showStatus("ERP disconnected. Your FinAccrual account is still active.", "success");
+            this.showStatus("QuickBooks disconnected. Your FinAccrual account is still active.", "success");
         }
     };
 }
