@@ -461,7 +461,17 @@ class QuickbooksController {
     activateConnection = asyncHandler(async (req, res, next) => {
         const companyId = req.params.id;
         const success = await QuickBooksService.activateConnection(companyId, req.user.email);
-        return res.json({ success: !!success });
+
+        let totalRecords = 0;
+        if (success) {
+            try {
+                const token = { companyId, realm_id: companyId };
+                const countInfo = await QuickBooksService.getTotalRecordCountsForToken(token);
+                totalRecords = countInfo.total;
+            } catch (err) {}
+        }
+
+        return res.json({ success: !!success, totalRecords });
     });
 
     /**

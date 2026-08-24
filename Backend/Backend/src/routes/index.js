@@ -213,11 +213,18 @@ router.post('/connections/:id/activate', authenticate, async (req, res, next) =>
         const companyId = req.params.id;
         const mail = req.user.email;
         let success = false;
+        let totalRecords = 0;
  
         if (quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
             const qbSuccess = await QuickBooksService.activateConnection(companyId, mail);
-            if (qbSuccess) success = true;
+            if (qbSuccess) {
+                success = true;
+                try {
+                    const countInfo = await QuickBooksService.getTotalRecordCountsForToken({ companyId, realm_id: companyId });
+                    totalRecords = countInfo.total;
+                } catch (cErr) {}
+            }
         }
  
         if (!success && xeroRoutes) {
@@ -226,7 +233,7 @@ router.post('/connections/:id/activate', authenticate, async (req, res, next) =>
             if (xeroSuccess) success = true;
         }
  
-        return res.json({ success });
+        return res.json({ success, totalRecords });
     } catch (err) {
         return next(err);
     }
@@ -314,6 +321,39 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
             }
         }
  
+        if (req.headers.accept?.includes('text/event-stream') || req.query.stream === 'true') {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.status(200);
+
+            const heartbeatInterval = setInterval(() => {
+                res.write(': heartbeat ping\n\n');
+            }, 15000);
+
+            const onProgress = (event) => {
+                res.write(`data: ${JSON.stringify(event)}\n\n`);
+            };
+
+            try {
+                if (normPlatform === 'quickbooks' && quickbooksRoutes) {
+                    const QuickBooksService = require('../modules/quickbooks/service');
+                    aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, mail, onProgress);
+                } else if (normPlatform === 'xero' && xeroRoutes) {
+                    const XeroService = require('../modules/xero/service');
+                    aggregated = await XeroService.pullMasterData(companyId, tier, mail);
+                }
+                clearInterval(heartbeatInterval);
+                res.write(`data: ${JSON.stringify({ type: 'complete', data: aggregated })}\n\n`);
+                return res.end();
+            } catch (streamErr) {
+                clearInterval(heartbeatInterval);
+                res.write(`data: ${JSON.stringify({ type: 'error', error: streamErr.message })}\n\n`);
+                return res.end();
+            }
+        }
+
         if (normPlatform === 'quickbooks' && quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
             aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, mail);

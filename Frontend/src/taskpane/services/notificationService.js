@@ -169,6 +169,14 @@ const NotificationService = {
         ) {
             return;
         }
+        // Skip persisting intermediate progress percentage notifications to notification history/drawer
+        if (message.startsWith("Pulling Master Data (") && !message.includes("100%")) {
+            if (isVisibleNow) {
+                this.showToast(message, normalizedType, detail);
+            }
+            return;
+        }
+
         this._lastNotif = { message, type: normalizedType, provider: normalizedProvider, at: now };
 
         // Only surface it (toast + badge/drawer refresh) if it's global

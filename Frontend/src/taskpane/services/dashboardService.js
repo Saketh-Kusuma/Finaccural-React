@@ -625,11 +625,18 @@ const DashboardService = {
         // Toast only fires once the backend confirms the switch — not
         // when the click merely starts the request.
         ApiService.apiFetch(`/api/connections/${companyId}/activate`, { method: "POST" })
-            .then(() => {
+            .then(res => res.json())
+            .then(data => {
                 this.renderERPSection();
                 if (targetConn) {
-                    this.addLog(`Switched active company to: ${targetConn.companyName}`);
-                    this.showStatus(`Active company updated to ${targetConn.companyName}`, "success", null, targetPlatform);
+                    const countMsg = data.totalRecords ? ` (Total Records Found: ${data.totalRecords})` : "";
+                    this.addLog(`Switched active company to: ${targetConn.companyName}${countMsg}`);
+                    this.showStatus(
+                        `Active company updated to ${targetConn.companyName}`,
+                        "success",
+                        data.totalRecords !== undefined ? `Total Records Found: ${data.totalRecords}` : null,
+                        targetPlatform
+                    );
                 }
             })
             .catch(err => {

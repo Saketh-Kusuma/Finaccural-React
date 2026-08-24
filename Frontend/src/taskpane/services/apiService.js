@@ -268,6 +268,61 @@ const ApiService = {
      *   call, and the whole dataset is never fetched at once.
      * @returns {Promise<object>} Map of company, customers, vendors, accounts, classes, locations, plus `cursor` (pass to the next call to continue) and `isDone` (true once every entity is exhausted).
      */
+    async fetchMasterDataStream(provider, companyId, onProgress) {
+        const params = new URLSearchParams({
+            companyId: companyId || "",
+            platform: provider || "",
+            tier: AppState.currentTier || "",
+            stream: "true"
+        });
+
+        const url = `${this.BASE}/api/pull-master-data?${params.toString()}`;
+        const headers = {};
+        if (AppState.jwtToken) {
+            headers["Authorization"] = `Bearer ${AppState.jwtToken}`;
+        }
+
+        const response = await fetch(url, { method: "GET", headers });
+        if (!response.ok) {
+            throw await parseApiError(response);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalData = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop(); // Keep last partial chunk
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    try {
+                        const payload = JSON.parse(line.replace("data: ", "").trim());
+                        if (payload.type === "progress" && typeof onProgress === "function") {
+                            onProgress(payload);
+                        } else if (payload.type === "start" && typeof onProgress === "function") {
+                            onProgress(payload);
+                        } else if (payload.type === "complete") {
+                            finalData = payload.data;
+                        } else if (payload.type === "error") {
+                            throw new Error(payload.error || "Data sync error");
+                        }
+                    } catch (pErr) {
+                        if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;
+                    }
+                }
+            }
+        }
+
+        return finalData;
+    },
+
     async fetchMasterData(provider, companyId, cursor) {
         // const apiErr = { code: ERROR_CODES.QB_SUBSCRIPTION_EXPIRED, message: "Your QuickBooks subscription has expired" };
         // ApiService.handleGlobalApiError(apiErr);

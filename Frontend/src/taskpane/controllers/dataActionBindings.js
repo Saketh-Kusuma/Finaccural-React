@@ -79,48 +79,48 @@ export function bindDataActionHandlers() {
             ? "provStepPull"
             : (provider === "quickbooks" ? "stepPull" : "xeroStepPull");
 
+        // Prevent duplicate clicks
+        if (button.disabled) return;
+        button.disabled = true;
+
         try {
             document.getElementById(stepId)?.classList.add("active");
 
             DashboardService.addLog(`Pulling master data from ${providerLabel}...`);
-            DashboardService.showStatus("Pulling data...", "success", null, provider);
+            DashboardService.showStatus("Initializing Data Pull...", "success", "Pre-flight record count check in progress...", provider);
 
-            // Pull Master Data is unconditionally a fresh start.
-            // Drop any cursor left behind by an in-progress cycle
-            // BEFORE the request goes out, so that even if the
-            // fetch below fails the next click still begins at
-            // record 1 rather than resuming a stale position.
-            // Passing null as the cursor makes the backend reset
-            // every API's offset/page/cursor to the beginning.
             const hadCursor = !!getPullPageCursor(provider, companyId);
             clearPullPageCursor(provider, companyId);
             if (hadCursor) {
                 DashboardService.addLog("Pull Master Data: restarting from the first batch — clearing previously pulled data.");
             }
 
-            // Every Pull click writes the cycle's first batch, so
-            // the org header row is always seeded and the sheet is
-            // always cleared first.
             const isFreshCycle = true;
 
-            const data = await ApiService.fetchMasterData(provider, companyId, null);
+            const onProgress = (event) => {
+                if (event.type === 'start') {
+                    DashboardService.showStatus(
+                        `Pulling Master Data (0%)`,
+                        "success",
+                        `Total Records Found: ${event.totalRecords}. Starting fetch...`,
+                        provider
+                    );
+                } else if (event.type === 'progress') {
+                    const pct = event.percentage || 0;
+                    DashboardService.showStatus(
+                        `Pulling Master Data (${pct}%)`,
+                        "success",
+                        `Fetched ${event.fetchedRecords} of ${event.totalRecords} records`,
+                        provider
+                    );
+                }
+            };
 
-            // Remove the previously pulled master data. Done after
-            // the fetch succeeds, so a failed request never leaves
-            // the user with an emptied sheet and nothing to show
-            // for it.
+            const data = await ApiService.fetchMasterDataStream(provider, companyId, onProgress);
+
             await ExcelService.clearMasterDataRange();
-
-            // The previous cycle's "pull complete" tick no longer
-            // describes what's on the sheet — this click has taken
-            // it back to just the first batch.
             DashboardService.markStepIncomplete("pull");
 
-            // CompanyInfo isn't paginated — the backend refetches
-            // it on every click of a cycle, not just the first —
-            // so only the cycle's first click seeds the org header
-            // row; skip it on every later page to avoid a
-            // duplicate, contentless "OrgName" row per click.
             const batch = flattenAllMasterDataRecords(data, { includeCompany: isFreshCycle });
 
             if (batch.length === 0 && isFreshCycle) {
@@ -132,15 +132,6 @@ export function bindDataActionHandlers() {
                 return;
             }
 
-            // One click = one batch, always — no exceptions for a
-            // repeat cycle. Exactly ONE /api/pull-master-data
-            // request was made above (ONE QuickBooks request
-            // inside it, for the single entity currently being
-            // drained, max 100 records); write just that response
-            // and stop. The next batch — whether it's the same
-            // entity's next 100 records or the first 100 of the next
-            // entity in the order — is only fetched on the NEXT
-            // click, never automatically within this one.
             await ExcelService.appendManualBatch(provider, batch);
 
             clearPullPageCursor(provider, companyId);
@@ -163,10 +154,6 @@ export function bindDataActionHandlers() {
             DashboardService.renderERPSection();
         } catch (error) {
             console.error(error);
-            // ApiService already showed the orange "reconnect" banner
-            // (or the offline banner) as a global side effect when
-            // this came from apiFetch — branch on the standardized
-            // `.code` here too, never on message text.
             const isExpired = error.code === ERROR_CODES.ERP_SESSION_EXPIRED;
             const msg = isExpired
                 ? error.message
@@ -179,19 +166,14 @@ export function bindDataActionHandlers() {
                 provider
             );
             if (isExpired) {
-                // renderERPConsole() only toggles a progress-step
-                // marker — it doesn't touch the company badge. To
-                // actually flip ACTIVE -> Reconnect in the UI, we
-                // need to re-fetch connections and re-render the
-                // company list, which is what renderERPSection()
-                // does. Guarded in case of an unexpected error, so
-                // it can't surface as an uncaught runtime popup.
                 try {
                     DashboardService.renderERPSection();
                 } catch (renderErr) {
                     console.error("Failed to refresh ERP section after session expiry:", renderErr);
                 }
             }
+        } finally {
+            button.disabled = false;
         }
     };
 
