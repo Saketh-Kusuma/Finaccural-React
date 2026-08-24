@@ -316,7 +316,7 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
  
         if (normPlatform === 'quickbooks' && quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            aggregated = await QuickBooksService.pullMasterData(companyId, tier, mail, cursorByCompany);
+            aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, mail);
         } else if (normPlatform === 'xero' && xeroRoutes) {
             const XeroService = require('../modules/xero/service');
             aggregated = await XeroService.pullMasterData(companyId, tier, mail);

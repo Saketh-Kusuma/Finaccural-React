@@ -501,23 +501,47 @@ class QuickbooksController {
      * exhausted and there is nothing left to fetch until the cycle is
      * reset.
      */
+    /**
+     * GET /api/quickbooks/pull-master-data?companyId=...&tier=...&stream=...
+     *
+     * Single-Click Auto-Pull Master Data Endpoint.
+     * Fetches 100% of data across all entities (Accounts, Classes, Locations, Customers, Vendors)
+     * using multithreaded async worker streams and auto-tuned pagination in a single request lifecycle.
+     * Includes HTTP Keep-Alive stream pings to prevent proxy timeouts.
+     */
     pullMasterData = asyncHandler(async (req, res, next) => {
-        const { companyId, tier, cursor } = req.query;
+        const { companyId, tier, mode, stream } = req.query;
+        const isIncremental = mode === 'incremental';
 
-        let cursorByCompany = {};
-        if (cursor) {
+        if (stream === 'true' || req.headers.accept?.includes('text/event-stream')) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.status(200);
+
+            const heartbeatInterval = setInterval(() => {
+                res.write(': heartbeat ping\n\n');
+            }, 15000);
+
             try {
-                const parsed = JSON.parse(cursor);
-                if (parsed && typeof parsed === 'object') cursorByCompany = parsed;
-            } catch (parseErr) {
-                // Malformed/tampered cursor — fail safe by starting a
-                // fresh cycle rather than throwing, since a bad cursor
-                // should never be able to break the Pull/Refresh button.
-                cursorByCompany = {};
+                const onProgress = (event) => {
+                    res.write(`data: ${JSON.stringify(event)}\n\n`);
+                };
+
+                const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, req.user.email, onProgress, isIncremental);
+                clearInterval(heartbeatInterval);
+
+                res.write(`data: ${JSON.stringify({ type: 'complete', data: aggregated })}\n\n`);
+                return res.end();
+            } catch (err) {
+                clearInterval(heartbeatInterval);
+                res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+                return res.end();
             }
         }
 
-        const aggregated = await QuickBooksService.pullMasterData(companyId, tier, req.user.email, cursorByCompany);
+        const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, req.user.email, null, isIncremental);
 
         if (!aggregated) {
             const { AppError } = require('../../core/errors/AppError');
@@ -532,8 +556,35 @@ class QuickbooksController {
             classes:   aggregated.classes,
             locations: aggregated.locations,
             isFirstSync: aggregated.isFirstSync,
-            cursor: aggregated.cursor,
-            isDone: aggregated.isDone
+            isDone: true
+        });
+    });
+
+    /**
+     * GET /api/quickbooks/refresh-incremental?companyId=...&tier=...
+     *
+     * Incremental Refresh Endpoint.
+     * Fetches ONLY modified or newly added records since the last sync timestamp (`MetaData.LastUpdatedTime`).
+     */
+    refreshIncremental = asyncHandler(async (req, res, next) => {
+        const { companyId, tier } = req.query;
+        const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, req.user.email, null, true);
+
+        if (!aggregated) {
+            const { AppError } = require('../../core/errors/AppError');
+            throw new AppError('No active connection found for refresh.', 404, 'ERR_NOT_FOUND', 'QuickBooks connection not found.');
+        }
+
+        return res.json({
+            company:   aggregated.company.length === 1 ? aggregated.company[0] : aggregated.company,
+            customers: aggregated.customers,
+            vendors:   aggregated.vendors,
+            accounts:  aggregated.accounts,
+            classes:   aggregated.classes,
+            locations: aggregated.locations,
+            isFirstSync: false,
+            isIncremental: true,
+            isDone: true
         });
     });
 }

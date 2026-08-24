@@ -184,6 +184,199 @@ class QuickBooksService {
     }
 
     /**
+     * Executes an API function call with exponential backoff and jitter for rate-limiting (429 / 503).
+     * Zero loops used — relies on pure async functional recursion.
+     */
+    static async executeWithRetryAndBackoff(fn, retries = 5, delay = 500) {
+        try {
+            return await fn();
+        } catch (err) {
+            const isRateLimited = err.response?.status === 429 || err.status === 429 || err.statusCode === 429 || err.code === 'THROTTLED';
+            if (isRateLimited && retries > 0) {
+                const jitter = Math.random() * 200;
+                const backoffMs = delay * 2 + jitter;
+                logger.warn(`[QB Rate Limit 429] Backing off for ${Math.round(backoffMs)}ms. Retries left: ${retries}`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                return QuickBooksService.executeWithRetryAndBackoff(fn, retries - 1, delay * 2);
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * Pre-flight query to count total records for all entity types of a token.
+     * Uses fast light `SELECT COUNT(*)` queries across Customer, Vendor, Account, Class, Department.
+     */
+    static async getTotalRecordCountsForToken(token) {
+        const entityNames = ['Customer', 'Vendor', 'Account', 'Class', 'Department'];
+        const countResults = await Promise.all(entityNames.map(async (entityName) => {
+            try {
+                const raw = await QuickBooksService.executeQuery(`SELECT COUNT(*) FROM ${entityName}`, token);
+                const count = raw?.QueryResponse?.totalCount || raw?.QueryResponse?.[entityName]?.length || 0;
+                return { entityName, count };
+            } catch (err) {
+                return { entityName, count: 0 };
+            }
+        }));
+
+        return countResults.reduce((acc, curr) => {
+            acc[curr.entityName] = curr.count;
+            acc.total += curr.count;
+            return acc;
+        }, { Customer: 0, Vendor: 0, Account: 0, Class: 0, Department: 0, total: 0 });
+    }
+
+    /**
+     * Pure loopless async functional recursion to page through an entity with dynamic auto-tuned batch sizing.
+     * Stack-safe due to V8 microtask queue yielding across await boundaries.
+     */
+    static async fetchEntityPagesRecursiveAutoTuned(entityName, token, startPosition = 1, currentBatchSize = 500, accumulatedRecords = [], onChunkCallback = null, updatedSince = null) {
+        const startTime = Date.now();
+        
+        let query = `SELECT * FROM ${entityName} STARTPOSITION ${startPosition} MAXRESULTS ${currentBatchSize}`;
+        if (updatedSince) {
+            query = `SELECT * FROM ${entityName} WHERE MetaData.LastUpdatedTime >= '${updatedSince}' STARTPOSITION ${startPosition} MAXRESULTS ${currentBatchSize}`;
+        }
+
+        const pageResult = await QuickBooksService.executeWithRetryAndBackoff(() => 
+            QuickBooksService.executeQuery(query, token)
+        );
+
+        const elapsedTime = Date.now() - startTime;
+        const records = pageResult?.QueryResponse?.[entityName] || [];
+        const updatedAccumulated = accumulatedRecords.concat(records);
+
+        if (typeof onChunkCallback === 'function' && records.length > 0) {
+            onChunkCallback(entityName, records.length);
+        }
+
+        // Base case: no more records or received fewer than batch size
+        if (records.length < currentBatchSize) {
+            return updatedAccumulated;
+        }
+
+        // Auto-tune next batch size based on execution time (target ~800ms)
+        const targetMs = 800;
+        const scaleFactor = elapsedTime > 0 ? targetMs / elapsedTime : 1.0;
+        const nextBatchSize = Math.max(50, Math.min(1000, Math.floor(currentBatchSize * Math.min(Math.max(scaleFactor, 0.5), 2.0))));
+        const nextPosition = startPosition + records.length;
+
+        // Recursive step without loops
+        return QuickBooksService.fetchEntityPagesRecursiveAutoTuned(
+            entityName,
+            token,
+            nextPosition,
+            nextBatchSize,
+            updatedAccumulated,
+            onChunkCallback,
+            updatedSince
+        );
+    }
+
+    /**
+     * Single-Click Multithreaded Full Data Sync Engine.
+     * Pulls 100% of data across all entities concurrently without any manual user refresh clicks.
+     * Invokes onProgress callback with live count and percentage progress updates.
+     */
+    static async pullMasterDataMultithreaded(companyId, tier, mail, onProgress = null, isIncremental = false) {
+        if (!mail) return null;
+        const { QuickBooksToken, Op } = QuickBooksService._db();
+        const maxAllowed = QuickBooksService.getMaxConnections(tier);
+
+        const rawTokens = companyId
+            ? await QuickBooksToken.findAll({ where: { realm_id: companyId, mail } })
+            : await QuickBooksToken.findAll({ where: { mail, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
+
+        const tokens = rawTokens.slice(0, maxAllowed).map(t => ({
+            platform:     'quickbooks',
+            companyId:    t.realm_id,
+            companyName:  t.company_name || 'QuickBooks Company',
+            realm_id:     t.realm_id,
+            lastSyncedAt: t.last_synced_at
+        }));
+
+        if (!tokens || tokens.length === 0) return null;
+
+        const results = await Promise.all(tokens.map(async (token) => {
+            const rawComp = await QuickBooksService.executeQuery('SELECT * FROM CompanyInfo', token).catch(() => null);
+            const comp = QuickBooksMapper.toCompanyInfo(rawComp);
+            const companyList = comp ? [{ ...comp, id: token.companyId }] : [];
+            const orgName = comp?.name || comp?.legalName || token.companyName;
+
+            // Step 1: Pre-flight Count Query
+            const countInfo = await QuickBooksService.getTotalRecordCountsForToken(token);
+            let grandTotal = countInfo.total;
+            let totalFetchedSoFar = 0;
+
+            console.log(`[MASTER SYNC START] Realm=${token.companyId} Org="${orgName}" TotalRecords=${grandTotal}`);
+            if (typeof onProgress === 'function') {
+                onProgress({ type: 'start', totalRecords: grandTotal, companyName: orgName, companyId: token.companyId });
+            }
+
+            const onChunk = (entityName, chunkSize) => {
+                totalFetchedSoFar += chunkSize;
+                const percentage = grandTotal > 0 ? Math.min(100, Math.round((totalFetchedSoFar / grandTotal) * 100)) : 100;
+                console.log(`[SYNC PROGRESS] ${percentage}% (${totalFetchedSoFar}/${grandTotal} records) entity=${entityName}`);
+                if (typeof onProgress === 'function') {
+                    onProgress({ type: 'progress', percentage, fetchedRecords: totalFetchedSoFar, totalRecords: grandTotal, currentEntity: entityName });
+                }
+            };
+
+            const updatedSinceFilter = (isIncremental && token.lastSyncedAt)
+                ? new Date(token.lastSyncedAt).toISOString()
+                : null;
+
+            // Step 2: Parallel Stream Worker Pool across all 5 Entities
+            const entityList = ['Account', 'Class', 'Department', 'Customer', 'Vendor'];
+            const [accountsRaw, classesRaw, locationsRaw, customersRaw, vendorsRaw] = await Promise.all([
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Account', token, 1, 500, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Class', token, 1, 500, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Department', token, 1, 500, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Customer', token, 1, 500, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Vendor', token, 1, 500, [], onChunk, updatedSinceFilter)
+            ]);
+
+            const rawCust  = { QueryResponse: { Customer:   customersRaw } };
+            const rawVend  = { QueryResponse: { Vendor:     vendorsRaw } };
+            const rawAcc   = { QueryResponse: { Account:    accountsRaw } };
+            const rawClass = { QueryResponse: { Class:      classesRaw } };
+            const rawLoc   = { QueryResponse: { Department: locationsRaw } };
+
+            const tag = (list) => list.map(i => ({ ...i, clientId: orgName, clientName: orgName }));
+            const isFirstSync = !token.lastSyncedAt;
+
+            await QuickBooksToken.update(
+                { last_synced_at: new Date(), status: 'Active' },
+                { where: { realm_id: token.companyId } }
+            );
+
+            return {
+                company: companyList,
+                customers: tag(QuickBooksMapper.toCustomerList(rawCust, token.lastSyncedAt)),
+                vendors: tag(QuickBooksMapper.toVendorList(rawVend, token.lastSyncedAt)),
+                accounts: tag(QuickBooksMapper.toAccountList(rawAcc, token.lastSyncedAt)),
+                classes: tag(QuickBooksMapper.toClassList(rawClass, token.lastSyncedAt)),
+                locations: tag(QuickBooksMapper.toLocationList(rawLoc, token.lastSyncedAt)),
+                isFirstSync,
+                isDone: true
+            };
+        }));
+
+        const aggregated = results.reduce((acc, curr) => ({
+            company: [...acc.company, ...curr.company],
+            customers: [...acc.customers, ...curr.customers],
+            vendors: [...acc.vendors, ...curr.vendors],
+            accounts: [...acc.accounts, ...curr.accounts],
+            classes: [...acc.classes, ...curr.classes],
+            locations: [...acc.locations, ...curr.locations],
+            isFirstSync: acc.isFirstSync && curr.isFirstSync,
+            isDone: true
+        }), { company: [], customers: [], vendors: [], accounts: [], classes: [], locations: [], isFirstSync: true, isDone: true });
+
+        return aggregated;
+    }
+
+    /**
      * Fetches exactly ONE page of `entityName` for a single token via
      * STARTPOSITION/MAXRESULTS — the single-page counterpart to
      * queryAll() above, which recurses through every page internally
@@ -200,9 +393,6 @@ class QuickBooksService {
         const query = `SELECT * FROM ${entityName} STARTPOSITION ${startPosition} MAXRESULTS ${pageSize}`;
         const raw = await QuickBooksService.executeQuery(query, token);
         const records = raw?.QueryResponse?.[entityName] || [];
-        // A page shorter than pageSize means this was the entity's last
-        // page for this token — same "fewer than batchSize" signal
-        // queryAll() uses internally to stop recursing.
         return { raw, records, hasMore: records.length === pageSize };
     }
 

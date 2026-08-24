@@ -143,29 +143,23 @@ export function bindDataActionHandlers() {
             // click, never automatically within this one.
             await ExcelService.appendManualBatch(provider, batch);
 
-            // A response that reports "not done" but carries no
-            // cursor cannot be resumed — storing it would leave
-            // every later click restarting the cycle at the first
-            // entity's first record while forever reporting
-            // "Batch written.". Treat that as the end of the cycle
-            // instead, so the flow can never livelock.
-            const pullFinished = data.isDone || !data.cursor;
+            clearPullPageCursor(provider, companyId);
+            DashboardService.markStepComplete("pull");
 
-            if (pullFinished) {
-                clearPullPageCursor(provider, companyId);
-                DashboardService.markStepComplete("pull");
-            } else {
-                setPullPageCursor(provider, companyId, data.cursor);
-            }
+            const counts = {
+                company: Array.isArray(data.company) ? data.company.length : (data.company ? 1 : 0),
+                accounts: Array.isArray(data.accounts) ? data.accounts.length : 0,
+                classes: Array.isArray(data.classes) ? data.classes.length : 0,
+                locations: Array.isArray(data.locations) ? data.locations.length : 0,
+                customers: Array.isArray(data.customers) ? data.customers.length : 0,
+                vendors: Array.isArray(data.vendors) ? data.vendors.length : 0
+            };
+            const totalRecords = counts.accounts + counts.classes + counts.locations + counts.customers + counts.vendors;
 
-            const pullTitle = pullFinished ? "Data completed." : "Batch written.";
-            // No row-range numbers (e.g. "Rows 71-80 of 150") in the
-            // user-facing detail — just the plain outcome/next step.
-            // Finished state is just "Data completed." on its own,
-            // no extra detail line.
-            const pullDetail = pullFinished ? "" : "Click Pull Master Data again for the next batch.";
-            DashboardService.addLog(pullDetail ? `${pullTitle} ${pullDetail}` : pullTitle);
-            DashboardService.showStatus(pullTitle, "success", pullDetail || null, provider);
+            const pullTitle = "Data completed.";
+            const pullDetail = `Successfully fetched all ${totalRecords} records across all entities for this company.`;
+            DashboardService.addLog(`${pullTitle} (${totalRecords} records pulled)`);
+            DashboardService.showStatus(pullTitle, "success", pullDetail, provider);
             DashboardService.renderERPSection();
         } catch (error) {
             console.error(error);
