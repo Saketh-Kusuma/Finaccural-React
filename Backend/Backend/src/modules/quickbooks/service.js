@@ -230,7 +230,7 @@ class QuickBooksService {
      * Pure loopless async functional recursion to page through an entity with dynamic auto-tuned batch sizing.
      * Stack-safe due to V8 microtask queue yielding across await boundaries.
      */
-    static async fetchEntityPagesRecursiveAutoTuned(entityName, token, startPosition = 1, currentBatchSize = 500, accumulatedRecords = [], onChunkCallback = null, updatedSince = null) {
+    static async fetchEntityPagesRecursiveAutoTuned(entityName, token, startPosition = 1, currentBatchSize = 1000, accumulatedRecords = [], onChunkCallback = null, updatedSince = null) {
         const startTime = Date.now();
         
         let query = `SELECT * FROM ${entityName} STARTPOSITION ${startPosition} MAXRESULTS ${currentBatchSize}`;
@@ -329,11 +329,11 @@ class QuickBooksService {
             // Step 2: Parallel Stream Worker Pool across all 5 Entities
             const entityList = ['Account', 'Class', 'Department', 'Customer', 'Vendor'];
             const [accountsRaw, classesRaw, locationsRaw, customersRaw, vendorsRaw] = await Promise.all([
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Account', token, 1, 500, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Class', token, 1, 500, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Department', token, 1, 500, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Customer', token, 1, 500, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Vendor', token, 1, 500, [], onChunk, updatedSinceFilter)
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Account', token, 1, 1000, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Class', token, 1, 1000, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Department', token, 1, 1000, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Customer', token, 1, 1000, [], onChunk, updatedSinceFilter),
+                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Vendor', token, 1, 1000, [], onChunk, updatedSinceFilter)
             ]);
 
             const rawCust  = { QueryResponse: { Customer:   customersRaw } };
