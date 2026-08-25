@@ -13,6 +13,7 @@ import { AppState } from "../state/appState.js";
 import { ApiService } from "../services/apiService.js";
 import { ExcelService } from "../services/excelService.js";
 import { DashboardService } from "../services/dashboardService.js";
+import { AppController } from "./appController.js";
 import { flattenAllMasterDataRecords } from "../services/excelDataMappers.js";
 import {
     getPullPageCursor,
@@ -21,10 +22,23 @@ import {
 } from "../batchDataLoader.js";
 import { ERROR_CODES } from "../../shared/apiErrorHandler.js";
 
+function checkTrialExpiredGuard(provider) {
+    if (AppController.isTrialExpired()) {
+        const msg = "Your free trial has expired. Please upgrade your plan to continue.";
+        DashboardService.addLog(`Action failed: ${msg}`);
+        DashboardService.showStatus("Trial Expired", "error", "Please upgrade your plan to perform data actions.", provider);
+        const modal = document.getElementById("trialExpiredModal");
+        if (modal) modal.style.display = "flex";
+        return true;
+    }
+    return false;
+}
+
 export function bindDataActionHandlers() {
 
     // Setup Sheets button in provider-selected state
     document.getElementById("setupBtnProv")?.addEventListener("click", async () => {
+        if (checkTrialExpiredGuard(AppState.currentProvider)) return;
         try {
             document.getElementById("provStepSetup")?.classList.add("active");
             DashboardService.addLog(`Setting up Master & Input sheets for ${AppState.currentProvider === "quickbooks" ? "QuickBooks" : "Xero"}...`);
@@ -75,6 +89,8 @@ export function bindDataActionHandlers() {
         const provider = AppState.currentProvider;
         const companyId = AppState.currentCompanyId;
         const providerLabel = provider === "quickbooks" ? "QuickBooks" : "Xero";
+
+        if (checkTrialExpiredGuard(provider)) return;
 
         // Prerequisite check: user MUST complete Setup Master & Input Sheets before pulling master data
         if (!DashboardService.isStepComplete("setup")) {
@@ -198,6 +214,7 @@ export function bindDataActionHandlers() {
 
     // Setup Sheets button
     document.getElementById("setupBtn")?.addEventListener("click", async () => {
+        if (checkTrialExpiredGuard(AppState.currentProvider)) return;
         try {
             const stepSetupId = AppState.currentProvider === "quickbooks" ? "stepSetup" : "xeroStepSetup";
             document.getElementById(stepSetupId)?.classList.add("active");
@@ -284,6 +301,8 @@ export function bindDataActionHandlers() {
         const provider = AppState.currentProvider;
         const companyId = AppState.currentCompanyId;
         const providerLabel = provider === "quickbooks" ? "QuickBooks" : "Xero";
+
+        if (checkTrialExpiredGuard(provider)) return;
 
         // Prerequisite check: user MUST complete Setup Master & Input Sheets and Pull Master Data first
         const isSetupDone = DashboardService.isStepComplete("setup");

@@ -91,9 +91,29 @@ export function createTrialController() {
         // the local mock-flow timer.
         getTrialEndTimestamp() {
             if (AppState.trialEndsAt) return AppState.trialEndsAt;
+            const trialEndsStr = localStorage.getItem("fa_trial_ends_at");
+            if (trialEndsStr) {
+                const endsVal = parseInt(trialEndsStr, 10);
+                if (!isNaN(endsVal) && endsVal > 0) return endsVal;
+            }
             const trialStartStr = localStorage.getItem("fa_trial_start");
-            if (!trialStartStr) return null;
-            return parseInt(trialStartStr, 10) + AppController.TRIAL_DURATION_MS;
+            if (trialStartStr) {
+                const startVal = parseInt(trialStartStr, 10);
+                if (!isNaN(startVal) && startVal > 0) {
+                    return startVal + (AppController.TRIAL_DURATION_MS || 2 * 60 * 1000);
+                }
+            }
+            return null;
+        },
+
+        isTrialExpired() {
+            const currentPlan = (AppState.subscriptionPlan || "").toLowerCase();
+            if (currentPlan === 'expired') return true;
+            if (currentPlan.includes('trial')) {
+                const endTs = AppController.getTrialEndTimestamp();
+                if (endTs && Date.now() >= endTs) return true;
+            }
+            return false;
         },
 
         checkTrialExpiration() {

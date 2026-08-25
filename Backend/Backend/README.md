@@ -8,9 +8,10 @@ This project serves as the robust backend for an Enterprise Resource Planning (E
 
 ## 3. Key Features
 - **Third-Party Integrations:** Seamless OAuth 2.0 integration with QuickBooks Online and Xero.
-- **Master Data Management:** Endpoints to fetch and export Customers, Vendors, and Accounts data.
-- **Excel Export:** Automated generation of `.xlsx` files for master data exports.
-- **Token Management:** Secure storage and retrieval of OAuth access and refresh tokens.
+- **Master Data Management & Streaming:** Server-Sent Events (SSE) streaming endpoint `/api/pull-master-data` for live progress and paginated/streamed Master Data synchronization (Accounts, Classes, Locations, Customers, Vendors).
+- **Authentication & Automatic Token Refresh:** 15-minute JWT access token lifecycle with transparent `/api/auth/refresh` token rotation.
+- **Excel Export:** Automated generation of `.xlsx` files and Excel Add-in mapping formats for master data.
+- **Company Ownership & Session Scoping:** Multi-tenant scoping per user and active company connection.
 - **Modular Architecture:** Highly scalable and decoupled module-based structure.
 - **Robust Error Handling:** Centralized error logging and exception management.
 

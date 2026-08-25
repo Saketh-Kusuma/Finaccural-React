@@ -77,8 +77,7 @@ const AppController = {
             AppController.startTrialExpirationWatcher();
 
             // Check if we are already locally expired to pop the modal immediately before rendering old UI
-            const isExpiredLocally = AppState.trialEndsAt && Date.now() >= AppState.trialEndsAt && (AppState.subscriptionPlan || "").toLowerCase().includes("trial");
-            if (isExpiredLocally || (AppState.subscriptionPlan || "").toLowerCase() === "expired") {
+            if (AppController.isTrialExpired()) {
                 const modal = document.getElementById("trialExpiredModal");
                 if (modal && modal.style.display !== "flex") {
                     modal.style.display = "flex";
@@ -127,10 +126,7 @@ const AppController = {
                         }
 
                         // Check expiration explicitly off the backend source of truth
-                        const currentPlan = (AppState.subscriptionPlan || "").toLowerCase();
-                        const isExpired = currentPlan === 'expired' || (currentPlan.includes('trial') && AppState.trialEndsAt && Date.now() >= AppState.trialEndsAt);
-
-                        if (isExpired) {
+                        if (AppController.isTrialExpired()) {
                             const modal = document.getElementById("trialExpiredModal");
                             if (modal && modal.style.display !== "flex") {
                                 modal.style.display = "flex";

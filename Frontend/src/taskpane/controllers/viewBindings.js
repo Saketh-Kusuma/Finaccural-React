@@ -149,16 +149,12 @@ export function createViewBindings() {
 
             // Back button
             document.getElementById("btnPlansBack")?.addEventListener("click", () => {
-                const currentPlan = (AppState.subscriptionPlan || "").toLowerCase();
-                const actualEndTs = AppState.trialEndsAt;
-                const isExpired = currentPlan === 'expired' || (currentPlan.includes('trial') && actualEndTs && Date.now() >= actualEndTs);
-
-                if (isExpired) {
+                if (AppController.isTrialExpired()) {
                     const modal = document.getElementById("trialExpiredModal");
-                    if (modal && modal.style.display !== "flex") {
+                    if (modal) {
                         modal.style.display = "flex";
                     }
-                    ViewRouter.show("Dashboard");
+                    return; // Prevents redirecting to Dashboard when trial is expired
                 } else if (AppState.hasSubscription) {
                     ViewRouter.show("Dashboard");
                 } else {
