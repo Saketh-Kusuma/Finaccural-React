@@ -141,7 +141,7 @@ const ApiService = {
             //   b) The refresh token itself is bad → fall through to
             //      the existing ERR_SESSION_EXPIRED path.
             const parsed = await parseApiError(res.clone());
-            if (parsed.status === 401 && AppState.refreshToken && !options._retried) {
+            if (res.status === 401 && AppState.refreshToken && !options._retried) {
                 try {
                     // Serialize concurrent 401s — only one refresh call
                     if (AppState._refreshing) {

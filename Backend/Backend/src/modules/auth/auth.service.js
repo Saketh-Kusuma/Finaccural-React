@@ -110,7 +110,7 @@ class AuthService {
         });
         const refreshToken = JwtService.generateRefreshToken();
 
-        const accessTokenExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+        const accessTokenExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
         const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
         // Persist the new refresh token — overwrites any previous token so

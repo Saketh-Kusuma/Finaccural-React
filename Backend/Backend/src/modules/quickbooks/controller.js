@@ -250,7 +250,7 @@ class QuickbooksController {
      * Exports company, customers, vendors, accounts, classes, and locations
      * as an Excel file, scoped to the authenticated user's companies.
      *
-     * Fetches in 10-record batches per entity instead of one big
+     * Fetches in 1000-record batches per entity instead of one big
      * unpaginated call per entity. Each batch still fires every entity's
      * API concurrently via Promise.all — same shape as the original
      * single-shot Promise.all below, just repeated batch-by-batch — so
@@ -263,7 +263,7 @@ class QuickbooksController {
      */
     exportMasterData = asyncHandler(async (req, res, next) => {
         const mail = req.user.email;
-        const BATCH_SIZE = 100;
+        const BATCH_SIZE = 1000;
 
         const { tokens: allTokens, company, orgNameByTokenId } =
             await QuickBooksService.getCompanyInfoAndOrgNames(mail)

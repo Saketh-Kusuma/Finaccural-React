@@ -561,10 +561,13 @@ class XeroService {
                 // First successful pull (or any subsequent one) marks the
                 // connection 'Active' — this is what takes it out of the
                 // initial 'Not Synced' state.
-                await XeroToken.update(
-                    { last_synced_at: new Date(), status: 'Active' },
-                    { where: { tenant_id: token.companyId } }
-                );
+                // Do not update last_synced_at unless every required API succeeds.
+                if (contactRes && accRes && classRes) {
+                    await XeroToken.update(
+                        { last_synced_at: new Date(), status: 'Active' },
+                        { where: { tenant_id: token.companyId } }
+                    );
+                }
 
                 return {
                     company: companyList,

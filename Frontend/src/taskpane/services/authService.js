@@ -45,7 +45,7 @@ const AuthService = {
         localStorage.setItem("fa_accounts_history", JSON.stringify(accounts));
     },
 
-    handleNewUserAuthed(email, name, provider, subscriptionId, plan, token) {
+    handleNewUserAuthed(email, name, provider, subscriptionId, plan, token, refreshToken) {
         // Drop any notification history cached in memory for whoever
         // was previously signed in on this taskpane session (e.g. an
         // account switch without a full logout) — otherwise the badge
@@ -68,7 +68,7 @@ const AuthService = {
             AppState.sessionExpired = false; // fresh token — lift the request block
             localStorage.setItem("fa_jwt_token", token);
         }
-        if (typeof refreshToken !== "undefined" && refreshToken) {
+        if (refreshToken) {
             AppState.refreshToken = refreshToken;
             localStorage.setItem("fa_refresh_token", refreshToken);
         }
@@ -87,6 +87,7 @@ const AuthService = {
         if (modal) modal.style.display = "none";
 
         AppController.startTrialExpirationWatcher();
+        this.startTokenRefreshTimer();
     },
 
     /**
@@ -96,7 +97,7 @@ const AuthService = {
      * @param {string} name
      * @param {string} provider
      */
-    async handleReturningUser(email, name, provider, token) {
+    async handleReturningUser(email, name, provider, token, refreshToken) {
         // Same reasoning as handleNewUserAuthed above — clear the
         // previous account's cached notifications before this account's
         // data replaces it.
@@ -117,7 +118,7 @@ const AuthService = {
             AppState.sessionExpired = false; // fresh token — lift the request block
             localStorage.setItem("fa_jwt_token", token);
         }
-        if (typeof refreshToken !== "undefined" && refreshToken) {
+        if (refreshToken) {
             AppState.refreshToken = refreshToken;
             localStorage.setItem("fa_refresh_token", refreshToken);
         }
@@ -139,6 +140,7 @@ const AuthService = {
                 if (modal) modal.style.display = "none";
 
                 AppController.startTrialExpirationWatcher();
+                this.startTokenRefreshTimer();
             } else {
                 // Plan is null or missing — show trial vs subscribe popup
                 AppController.openTrialSelectDialog();
@@ -186,7 +188,8 @@ const AuthService = {
                     "google",
                     data.subscriptionId || "",
                     data.plan || "Starter",
-                    data.token || ""
+                    data.token || "",
+                    data.refreshToken || ""
                 );
             } else if (data.type === "google_profile") {
                 // Returning user — popup closed immediately, check backend
@@ -195,7 +198,8 @@ const AuthService = {
                     data.email || "",
                     data.name || data.email || "",
                     "google",
-                    data.token || ""
+                    data.token || "",
+                    data.refreshToken || ""
                 );
             } else if (data.type === "google_cancelled") {
                 // User clicked logout in the popup
@@ -248,7 +252,8 @@ const AuthService = {
                     "microsoft",
                     data.subscriptionId || "",
                     data.plan || "Starter",
-                    data.token || ""
+                    data.token || "",
+                    data.refreshToken || ""
                 );
             } else if (data.type === "ms_profile" || data.type === "microsoft_profile") {
                 window.removeEventListener("message", msgHandler);
@@ -256,7 +261,8 @@ const AuthService = {
                     data.email || "",
                     data.name || data.email || "",
                     "microsoft",
-                    data.token || ""
+                    data.token || "",
+                    data.refreshToken || ""
                 );
             } else if (data.type === "ms_cancelled" || data.type === "google_cancelled") {
                 window.removeEventListener("message", msgHandler);
@@ -280,6 +286,36 @@ const AuthService = {
         }
     },
 
+    _tokenRefreshInterval: null,
+
+    startTokenRefreshTimer() {
+        if (this._tokenRefreshInterval) {
+            clearInterval(this._tokenRefreshInterval);
+        }
+        // Since access token expires in 3 minutes (180,000 ms),
+        // we proactively refresh it 1 minute before expiry (every 2 minutes / 120,000 ms).
+        this._tokenRefreshInterval = setInterval(async () => {
+            if (AppState.jwtToken && AppState.refreshToken && !AppState.sessionExpired) {
+                try {
+                    const refreshRes = await fetch(`${ApiService.BASE}/api/auth/refresh`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ refreshToken: AppState.refreshToken })
+                    });
+                    if (refreshRes.ok) {
+                        const data = await refreshRes.json();
+                        AppState.jwtToken = data.token;
+                        AppState.refreshToken = data.refreshToken;
+                        localStorage.setItem("fa_jwt_token", data.token);
+                        localStorage.setItem("fa_refresh_token", data.refreshToken);
+                    }
+                } catch (err) {
+                    console.error("Proactive token refresh failed:", err);
+                }
+            }
+        }, 120 * 1000);
+    },
+
     _persistSubscription() {
         localStorage.setItem("fa_has_subscription", String(AppState.hasSubscription));
         localStorage.setItem("fa_subscription_id", AppState.subscriptionId || "");
@@ -291,6 +327,11 @@ const AuthService = {
      * Clears all auth + subscription state and returns to welcome screen.
      */
     logout() {
+        if (this._tokenRefreshInterval) {
+            clearInterval(this._tokenRefreshInterval);
+            this._tokenRefreshInterval = null;
+        }
+
         ExcelService.clearMasterData().catch(err => console.error("Error clearing Excel data on logout: ", err));
 
         const lastEmail = localStorage.getItem("fa_user_email");

@@ -18,6 +18,7 @@ import { DashboardService } from "../services/dashboardService.js";
 import { createTrialController } from "./trialController.js";
 import { createViewBindings } from "./viewBindings.js";
 import { bindDashboardView } from "./dashboardBindings.js";
+import { AuthService } from "../services/authService.js";
 
 const AppController = {
 
@@ -103,6 +104,7 @@ const AppController = {
             // hasn't landed yet would otherwise look exactly like the
             // plan silently reverting to Basic on refresh.
             if (AppState.jwtToken) {
+                AuthService.startTokenRefreshTimer();
                 ApiService.apiFetch("/api/auth/me")
                     .then(r => (r.ok ? r.json() : null))
                     .then(result => {

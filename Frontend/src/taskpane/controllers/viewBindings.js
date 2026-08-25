@@ -67,9 +67,10 @@ export function createViewBindings() {
                                     
                                     const currentEmail = localStorage.getItem("fa_user_email");
                                     const currentToken = localStorage.getItem("fa_jwt_token");
+                                    const currentRefreshToken = localStorage.getItem("fa_refresh_token");
 
                                     if (targetEmail && targetEmail === currentEmail && currentToken) {
-                                        AppController.handleReturningUser(targetEmail, message.name || localStorage.getItem("fa_user_name"), provider, currentToken);
+                                        AuthService.handleReturningUser(targetEmail, message.name || localStorage.getItem("fa_user_name"), provider, currentToken, currentRefreshToken);
                                     } else {
                                         if (provider === "microsoft") {
                                             AuthService.openMicrosoftPopup(targetEmail || undefined);

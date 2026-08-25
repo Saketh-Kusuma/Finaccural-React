@@ -278,8 +278,14 @@ class QuickBooksService {
      * Pulls 100% of data across all entities concurrently without any manual user refresh clicks.
      * Invokes onProgress callback with live count and percentage progress updates.
      */
+    /**
+     * Single-Click Master Data Sync Engine.
+     * Sequentially pulls data entity by entity (Account -> Class -> Department -> Customer -> Vendor)
+     * using loopless functional pipelines, MAXRESULTS=1000 page sizes, and clean event streaming.
+     */
     static async pullMasterDataMultithreaded(companyId, tier, mail, onProgress = null, isIncremental = false) {
         if (!mail) return null;
+        const logger = require('../../config/logger');
         const { QuickBooksToken, Op } = QuickBooksService._db();
         const maxAllowed = QuickBooksService.getMaxConnections(tier);
 
@@ -297,28 +303,27 @@ class QuickBooksService {
 
         if (!tokens || tokens.length === 0) return null;
 
-        const results = await Promise.all(tokens.map(async (token) => {
+        // Process company tokens sequentially using Array.prototype.reduce (functional pipeline without loops)
+        const results = await tokens.reduce(async (companyAccPromise, token) => {
+            const companyAcc = await companyAccPromise;
+            
             const rawComp = await QuickBooksService.executeQuery('SELECT * FROM CompanyInfo', token).catch(() => null);
             const comp = QuickBooksMapper.toCompanyInfo(rawComp);
             const companyList = comp ? [{ ...comp, id: token.companyId }] : [];
             const orgName = comp?.name || comp?.legalName || token.companyName;
 
-            // Step 1: Pre-flight Count Query
-            const countInfo = await QuickBooksService.getTotalRecordCountsForToken(token);
-            let grandTotal = countInfo.total;
             let totalFetchedSoFar = 0;
+            logger.info({ realmId: token.companyId, orgName, isIncremental }, 'Starting Master Data Sync');
 
-            console.log(`[MASTER SYNC START] Realm=${token.companyId} Org="${orgName}" TotalRecords=${grandTotal}`);
             if (typeof onProgress === 'function') {
-                onProgress({ type: 'start', totalRecords: grandTotal, companyName: orgName, companyId: token.companyId });
+                onProgress({ type: 'start', companyName: orgName, companyId: token.companyId });
             }
 
             const onChunk = (entityName, chunkSize) => {
                 totalFetchedSoFar += chunkSize;
-                const percentage = grandTotal > 0 ? Math.min(100, Math.round((totalFetchedSoFar / grandTotal) * 100)) : 100;
-                console.log(`[SYNC PROGRESS] ${percentage}% (${totalFetchedSoFar}/${grandTotal} records) entity=${entityName}`);
+                logger.debug({ entityName, chunkSize, totalFetchedSoFar, realmId: token.companyId }, 'Fetched entity page chunk');
                 if (typeof onProgress === 'function') {
-                    onProgress({ type: 'progress', percentage, fetchedRecords: totalFetchedSoFar, totalRecords: grandTotal, currentEntity: entityName });
+                    onProgress({ type: 'progress', fetchedRecords: totalFetchedSoFar, currentEntity: entityName });
                 }
             };
 
@@ -326,21 +331,29 @@ class QuickBooksService {
                 ? new Date(token.lastSyncedAt).toISOString()
                 : null;
 
-            // Step 2: Parallel Stream Worker Pool across all 5 Entities
+            // Sequential Entity Processing: Account -> Class -> Department -> Customer -> Vendor
             const entityList = ['Account', 'Class', 'Department', 'Customer', 'Vendor'];
-            const [accountsRaw, classesRaw, locationsRaw, customersRaw, vendorsRaw] = await Promise.all([
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Account', token, 1, 1000, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Class', token, 1, 1000, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Department', token, 1, 1000, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Customer', token, 1, 1000, [], onChunk, updatedSinceFilter),
-                QuickBooksService.fetchEntityPagesRecursiveAutoTuned('Vendor', token, 1, 1000, [], onChunk, updatedSinceFilter)
-            ]);
+            
+            const entityMap = await entityList.reduce(async (entityAccPromise, entityName) => {
+                const entityAcc = await entityAccPromise;
+                const records = await QuickBooksService.fetchEntityPagesRecursiveAutoTuned(
+                    entityName,
+                    token,
+                    1,
+                    1000, // Maximum allowed page size per QuickBooks request
+                    [],
+                    onChunk,
+                    updatedSinceFilter
+                );
+                entityAcc[entityName] = records;
+                return entityAcc;
+            }, Promise.resolve({}));
 
-            const rawCust  = { QueryResponse: { Customer:   customersRaw } };
-            const rawVend  = { QueryResponse: { Vendor:     vendorsRaw } };
-            const rawAcc   = { QueryResponse: { Account:    accountsRaw } };
-            const rawClass = { QueryResponse: { Class:      classesRaw } };
-            const rawLoc   = { QueryResponse: { Department: locationsRaw } };
+            const rawCust  = { QueryResponse: { Customer:   entityMap.Customer } };
+            const rawVend  = { QueryResponse: { Vendor:     entityMap.Vendor } };
+            const rawAcc   = { QueryResponse: { Account:    entityMap.Account } };
+            const rawClass = { QueryResponse: { Class:      entityMap.Class } };
+            const rawLoc   = { QueryResponse: { Department: entityMap.Department } };
 
             const tag = (list) => list.map(i => ({ ...i, clientId: orgName, clientName: orgName }));
             const isFirstSync = !token.lastSyncedAt;
@@ -350,7 +363,9 @@ class QuickBooksService {
                 { where: { realm_id: token.companyId } }
             );
 
-            return {
+            logger.info({ realmId: token.companyId, totalRecords: totalFetchedSoFar }, 'Master Data Sync Complete');
+
+            companyAcc.push({
                 company: companyList,
                 customers: tag(QuickBooksMapper.toCustomerList(rawCust, token.lastSyncedAt)),
                 vendors: tag(QuickBooksMapper.toVendorList(rawVend, token.lastSyncedAt)),
@@ -359,8 +374,10 @@ class QuickBooksService {
                 locations: tag(QuickBooksMapper.toLocationList(rawLoc, token.lastSyncedAt)),
                 isFirstSync,
                 isDone: true
-            };
-        }));
+            });
+
+            return companyAcc;
+        }, Promise.resolve([]));
 
         const aggregated = results.reduce((acc, curr) => ({
             company: [...acc.company, ...curr.company],

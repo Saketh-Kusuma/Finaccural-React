@@ -62,6 +62,7 @@ export async function parseApiError(response) {
     const details = body.details || `HTTP ${response.status} ${response.statusText}`;
 
     const err = new ApiError(code, message, details);
+    err.status = response.status;
     // Technical detail goes to the console only — never the UI.
     console.error(`[API ${response.status}] ${code}:`, details);
     return err;
