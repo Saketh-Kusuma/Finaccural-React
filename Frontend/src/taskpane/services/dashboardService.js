@@ -14,6 +14,7 @@ import { ExcelService } from "./excelService.js";
 import { NotificationService } from "./notificationService.js";
 import { createDashboardConsole } from "./dashboardConsole.js";
 import { createErpConnection } from "./erpConnectionService.js";
+import { clearPullPageCursor } from "../batchDataLoader.js";
 
 const DashboardService = {
 
@@ -620,6 +621,9 @@ const DashboardService = {
             AppState.erpType = AppState.currentProvider;
         }
 
+        clearPullPageCursor(AppState.currentProvider, companyId);
+        this.markStepIncomplete("setup");
+        this.markStepIncomplete("pull");
         ExcelService.clearMasterData().catch(err => console.error("Error clearing Excel data: ", err));
 
         // Toast only fires once the backend confirms the switch — not

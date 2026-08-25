@@ -276,13 +276,8 @@ const ApiService = {
             stream: "true"
         });
 
-        const url = `${this.BASE}/api/pull-master-data?${params.toString()}`;
-        const headers = {};
-        if (AppState.jwtToken) {
-            headers["Authorization"] = `Bearer ${AppState.jwtToken}`;
-        }
-
-        const response = await fetch(url, { method: "GET", headers });
+        const path = `/api/pull-master-data?${params.toString()}`;
+        const response = await this.apiFetch(path, { method: "GET" });
         if (!response.ok) {
             throw await parseApiError(response);
         }

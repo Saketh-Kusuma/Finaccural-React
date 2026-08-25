@@ -15,6 +15,7 @@ import { AuthService } from "../services/authService.js";
 import { NotificationService } from "../services/notificationService.js";
 import { DashboardService } from "../services/dashboardService.js";
 import { bindDataActionHandlers } from "./dataActionBindings.js";
+import { clearPullPageCursor } from "../batchDataLoader.js";
 
 export function bindDashboardView() {
 
@@ -374,6 +375,9 @@ export function bindDashboardView() {
             AppState.currentCompanyId = opt.value;
             AppState.currentProvider = opt.dataset.platform;
             AppState.erpType = opt.dataset.platform;
+            clearPullPageCursor(AppState.currentProvider, AppState.currentCompanyId);
+            DashboardService.markStepIncomplete("setup");
+            DashboardService.markStepIncomplete("pull");
             ExcelService.clearMasterData().catch(err => console.error("Error clearing Excel data: ", err));
 
             // Activate in backend and re-render

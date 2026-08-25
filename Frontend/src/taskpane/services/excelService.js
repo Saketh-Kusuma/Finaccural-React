@@ -384,7 +384,31 @@ const ExcelService = {
             const existingOrgColumn = sheet.getRange("A2:A10000");
             existingOrgColumn.load("values");
 
+            // Load existing record IDs for deduplication:
+            // Accounts ID is in col L (L1 = QBO Account Id), Classes ID in col P (P1 = QBO Class Id),
+            // Locations ID in col U (U1 = QBO Location Id), Entities ID in col AA (AA1 = QBO Entity Id)
+            const existingAccountsIdRange = sheet.getRange("L2:L10000");
+            const existingClassesIdRange = sheet.getRange("P2:P10000");
+            const existingLocationsIdRange = sheet.getRange("U2:U10000");
+            const existingEntitiesIdRange = sheet.getRange("AA2:AA10000");
+
+            existingAccountsIdRange.load("values");
+            existingClassesIdRange.load("values");
+            existingLocationsIdRange.load("values");
+            existingEntitiesIdRange.load("values");
+
             await context.sync();
+
+            const extractIds = (range) => new Set(
+                (range.values || [])
+                    .map(row => (row && row[0] != null ? String(row[0]).trim() : ""))
+                    .filter(Boolean)
+            );
+
+            const seenAccountIds = extractIds(existingAccountsIdRange);
+            const seenClassIds = extractIds(existingClassesIdRange);
+            const seenLocationIds = extractIds(existingLocationsIdRange);
+            const seenEntityIds = extractIds(existingEntitiesIdRange);
 
             // usedRange.rowIndex is 0-based and rowCount is a length, so
             // (rowIndex + rowCount) is the 1-based index of the LAST used
@@ -404,6 +428,8 @@ const ExcelService = {
                     .filter(Boolean)
             );
 
+            let totalWrittenRecords = 0;
+
             /**
              * Writes one block's rows at that block's own next free row
              * and advances it, so consecutive batches stack without gaps.
@@ -420,6 +446,9 @@ const ExcelService = {
                 written.format.wrapText = true;
 
                 rowFor[key] = startRow + values.length;
+                if (key !== "company") {
+                    totalWrittenRecords += values.length;
+                }
             };
 
             for (const [, group] of orgGroupsMap) {
@@ -432,7 +461,16 @@ const ExcelService = {
                     seenOrgNames.add(orgName.trim());
                 }
 
-                await writeBlock("accounts", group.accounts.map(a => [
+                // Filter out accounts already existing in Excel
+                const newAccounts = group.accounts.filter(a => {
+                    const id = String(a.id || a.Id || a.AccountID || "").trim();
+                    if (!id) return true;
+                    if (seenAccountIds.has(id)) return false;
+                    seenAccountIds.add(id);
+                    return true;
+                });
+
+                await writeBlock("accounts", newAccounts.map(a => [
                     orgName,
                     a.acctNum || a.code || a.AcctNum || a.Code || "",
                     a.name || a.Name || "",
@@ -444,21 +482,48 @@ const ExcelService = {
                     a.id || a.Id || a.AccountID || ""
                 ]));
 
-                await writeBlock("classes", group.classes.map(c => [
+                // Filter out classes already existing in Excel
+                const newClasses = group.classes.filter(c => {
+                    const id = String(c.id || c.Id || "").trim();
+                    if (!id) return true;
+                    if (seenClassIds.has(id)) return false;
+                    seenClassIds.add(id);
+                    return true;
+                });
+
+                await writeBlock("classes", newClasses.map(c => [
                     orgName,
                     c.name || c.Name || "",
                     c.id || c.Id || "",
                     c.active !== undefined ? (c.active ? "Active" : "Inactive") : "Active"
                 ]));
 
-                await writeBlock("locations", group.locations.map(l => [
+                // Filter out locations already existing in Excel
+                const newLocations = group.locations.filter(l => {
+                    const id = String(l.id || l.Id || "").trim();
+                    if (!id) return true;
+                    if (seenLocationIds.has(id)) return false;
+                    seenLocationIds.add(id);
+                    return true;
+                });
+
+                await writeBlock("locations", newLocations.map(l => [
                     orgName,
                     l.name || l.Name || "",
                     l.id || l.Id || "",
                     l.active !== undefined ? (l.active ? "Active" : "Inactive") : "Active"
                 ]));
 
-                await writeBlock("entities", group.entities.map(e => [
+                // Filter out entities (Customers/Vendors) already existing in Excel
+                const newEntities = group.entities.filter(e => {
+                    const id = String(e.id || "").trim();
+                    if (!id) return true;
+                    if (seenEntityIds.has(id)) return false;
+                    seenEntityIds.add(id);
+                    return true;
+                });
+
+                await writeBlock("entities", newEntities.map(e => [
                     orgName, e.name, e.type, e.id, e.status
                 ]));
             }
@@ -466,6 +531,7 @@ const ExcelService = {
             sheet.getRange("A:AB").format.columnWidth = 115;
 
             await context.sync();
+            return totalWrittenRecords;
         });
 
         return batch.length;

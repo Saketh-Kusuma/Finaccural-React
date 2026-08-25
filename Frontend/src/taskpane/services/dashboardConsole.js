@@ -247,6 +247,19 @@ export function createDashboardConsole() {
         },
 
         /**
+         * Checks if a given step ("setup" or "pull") is marked complete for the
+         * current provider + active company.
+         * @param {"setup"|"pull"} stepName
+         * @returns {boolean}
+         */
+        isStepComplete(stepName) {
+            const provider = AppState.currentProvider === "quickbooks" ? "quickbooks" : "xero";
+            const key = this._stepStateKey(provider, AppState.currentCompanyId);
+            const state = this._loadStepState()[key] || {};
+            return !!state[stepName];
+        },
+
+        /**
          * Marks a progress step as complete (connected-dashboard console).
          * @param {string} step - base step ID ("stepConnect"|"stepSetup"|"stepPull")
          */

@@ -75,6 +75,15 @@ export function bindDataActionHandlers() {
         const provider = AppState.currentProvider;
         const companyId = AppState.currentCompanyId;
         const providerLabel = provider === "quickbooks" ? "QuickBooks" : "Xero";
+
+        // Prerequisite check: user MUST complete Setup Master & Input Sheets before pulling master data
+        if (!DashboardService.isStepComplete("setup")) {
+            const detailMsg = `Cannot pull master data: You must run Setup Master & Input Sheets for ${providerLabel} first.`;
+            DashboardService.addLog(`Pull Master Data failed: ${detailMsg}`);
+            DashboardService.showStatus("Pull Master Data Failed", "error", detailMsg, provider);
+            return;
+        }
+
         const stepId = isProv
             ? "provStepPull"
             : (provider === "quickbooks" ? "stepPull" : "xeroStepPull");
@@ -272,101 +281,53 @@ export function bindDataActionHandlers() {
     const handleRefreshClick = async (event) => {
         const button = event.currentTarget;
 
-        // Refresh Schedule no longer requires Setup/Pull to already
-        // be marked "complete" before it can run — Pull Master Data
-        // and Refresh are two triggers for the same server-driven
-        // pagination cursor (see handlePullClick above and
-        // batchDataLoader.js#getPullPageCursor), so Refresh must be
-        // usable right after the very first Pull click, not just
-        // once an entire multi-page pull cycle has fully drained.
-
-        const icon = button.querySelector(".refresh-icon");
-        if (icon) icon.classList.add("spin");
-
         const provider = AppState.currentProvider;
         const companyId = AppState.currentCompanyId;
         const providerLabel = provider === "quickbooks" ? "QuickBooks" : "Xero";
+
+        // Prerequisite check: user MUST complete Setup Master & Input Sheets and Pull Master Data first
+        const isSetupDone = DashboardService.isStepComplete("setup");
+        const isPullDone = DashboardService.isStepComplete("pull");
+
+        if (!isSetupDone || !isPullDone) {
+            const missingSteps = [];
+            if (!isSetupDone) missingSteps.push("Setup Master & Input Sheets");
+            if (!isPullDone) missingSteps.push("Pull Master Data");
+            const detailMsg = `Cannot refresh schedule: You must run ${missingSteps.join(" and ")} from ${providerLabel} first.`;
+
+            DashboardService.addLog(`Refresh Schedule failed: ${detailMsg}`);
+            DashboardService.showStatus("Refresh Schedule Failed", "error", detailMsg, provider);
+            return;
+        }
+
+        const icon = button.querySelector(".refresh-icon");
+        if (icon) icon.classList.add("spin");
 
         try {
             DashboardService.addLog(`Refreshing live data from ${providerLabel}...`);
             DashboardService.showStatus("Refreshing...", "success", null, provider);
 
-            // Refresh Schedule is the CONTINUE half of the pair:
-            // it reads the same stored per-provider/company cursor
-            // Pull Master Data writes (see handlePullClick above)
-            // and asks for the NEXT batch of 100 records of the ONE
-            // entity currently being drained, appending it to
-            // what's already on the sheet — 1-10, then 11-20, then
-            // 21-30, and so on through the fixed Accounts ->
-            // Classes -> Locations -> Customers -> Vendors order.
-            //
-            // Unlike Pull Master Data, Refresh never resets the
-            // cursor. The one case where it does start over is
-            // when there is no cursor at all — nothing has been
-            // pulled yet, or the last cycle already finished — in
-            // which case there is no position to continue from and
-            // a new cycle begins at record 1, clearing the sheet
-            // exactly as a Pull would.
-            const priorCursor = getPullPageCursor(provider, companyId);
-            const isFreshCycle = !priorCursor;
+            // Fetch complete master data stream to compare against existing sheet records
+            const data = await ApiService.fetchMasterDataStream(provider, companyId);
+            const batch = flattenAllMasterDataRecords(data, { includeCompany: false });
 
-            const data = await ApiService.fetchMasterData(provider, companyId, priorCursor);
-
-            if (isFreshCycle) {
-                // Start of a fresh cycle: clear the sheet's data
-                // range exactly once, right before writing this
-                // click's first page, same as Pull Master Data.
-                await ExcelService.clearMasterDataRange();
-            }
-
-            // CompanyInfo isn't paginated — refetched on every
-            // click of a cycle, not just the first — so only the
-            // cycle's first click seeds the org header row.
-            const batch = flattenAllMasterDataRecords(data, { includeCompany: isFreshCycle });
-
-            if (batch.length === 0 && isFreshCycle) {
-                clearPullPageCursor(provider, companyId);
-                const timestamp = new Date().toLocaleTimeString();
-                await ExcelService.stampLastRefreshed(timestamp);
-                DashboardService.addLog("Refresh: no more data available.");
-                DashboardService.showStatus("No more data available.", "success", "No master data found for this company.", provider);
-                return;
-            }
-
-            // One click = one batch, always — no exceptions for a
-            // repeat cycle. Exactly ONE /api/pull-master-data
-            // request was made above (ONE QuickBooks request
-            // inside it, for the single entity currently being
-            // drained, max 100 records); write just that response
-            // and stop. The next batch — whether it's the same
-            // entity's next 100 records or the first 100 of the next
-            // entity in the order — is only fetched on the NEXT
-            // click, never automatically within this one.
-            await ExcelService.appendManualBatch(provider, batch);
+            // Append batch without duplicates and return exact new record count written
+            const updatedCount = await ExcelService.appendManualBatch(provider, batch);
 
             const timestamp = new Date().toLocaleTimeString();
             await ExcelService.stampLastRefreshed(timestamp);
 
-            // Same no-cursor guard as handlePullClick above — see
-            // the comment there for why a cursor-less "not done"
-            // response has to end the cycle.
-            const refreshFinished = data.isDone || !data.cursor;
+            clearPullPageCursor(provider, companyId);
 
-            if (refreshFinished) {
-                clearPullPageCursor(provider, companyId);
-                DashboardService.markStepComplete("pull");
+            const refreshTitle = "Schedule Refreshed";
+            if (updatedCount === 0) {
+                DashboardService.addLog("Refresh Schedule complete: 0 updated records added.");
+                DashboardService.showStatus(refreshTitle, "success", "0 updated records added.", provider);
             } else {
-                setPullPageCursor(provider, companyId, data.cursor);
+                const refreshDetail = `${updatedCount} updated record${updatedCount === 1 ? "" : "s"} added.`;
+                DashboardService.addLog(`Refresh Schedule complete: ${refreshDetail}`);
+                DashboardService.showStatus(refreshTitle, "success", refreshDetail, provider);
             }
-
-            const refreshTitle = refreshFinished ? "Data completed." : "Batch written.";
-            // No row-range numbers (e.g. "Rows 71-80 of 150") in the
-            // user-facing detail — just the plain outcome/next step.
-            // Finished state is just "Data completed." on its own,
-            // no extra detail line.
-            const refreshDetail = refreshFinished ? "" : "Click Refresh again for the next batch.";
-            DashboardService.addLog(refreshDetail ? `${refreshTitle} ${refreshDetail}` : refreshTitle);
-            DashboardService.showStatus(refreshTitle, "success", refreshDetail || null, provider);
         } catch (err) {
             console.error("Refresh error:", err);
             DashboardService.addLog("Error refreshing: " + err.message);
