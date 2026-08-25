@@ -3,7 +3,7 @@ A modern, high-performance React dashboard designed for accounting firms to mana
 ---
 
 ## Features
-- **Global Monolithic State**: The entire application runs on a centralized, highly-reactive state tree using React Context and Reducers, ensuring data is instantly synchronized across all views (e.g., adding a client instantly updates the Dashboard statistics).
+- **Global Monolithic State**: The entire application runs on a centralized, highly-reactive state tree using React Context and Reducers, ensuring data is instantly synchronized across all views (e.g, adding a client instantly updates the Dashboard statistics).
 - **Authentication Gateway**: Login screen with email validation and password rules that connects to the backend API, with graceful offline/demo fallback during development.
 - **Dynamic Dashboard**: Real-time statistical tracking of Active Clients, Active Schedules, Journal Entries, and Data Uploads.
 - **Entity Management**: Fully functional CRUD interfaces for Clients, Schedules, Accounts, and Journal Entries.

@@ -72,11 +72,11 @@ Frontend/
    ```
 
 3. To stop the add-in and clear sideloading state:
-   ```bash
+   ``bash
    npm run stop
    ```
 
 4. To validate the manifest file:
-   ```bash
+   ``bash
    npm run validate
    ```
