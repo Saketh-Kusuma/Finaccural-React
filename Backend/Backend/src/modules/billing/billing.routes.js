@@ -25,7 +25,7 @@ const schemas = require('../../core/validation/schemas');
 router.post('/subscription/upgrade', authenticate, validate(schemas.billingUpgrade), controller.upgrade);
 
 // ── Payments sub-path ────────────────────────────────────────────
-router.get('/payments/checkout', authenticate, controller.checkout);
+router.get('/payments/checkout', controller.checkout);
 router.post('/payments/complete', authenticate, validate(schemas.completePayment), controller.completePayment);
 
 module.exports = router;

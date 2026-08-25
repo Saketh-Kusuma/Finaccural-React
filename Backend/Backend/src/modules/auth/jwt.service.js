@@ -14,13 +14,13 @@ const config = require('../../core/config');
 class JwtService {
 
     /**
-     * Sign a short-lived access JWT (3 minutes).
+     * Sign an access JWT (1 hour).
      * @param {{ userId: string, email: string, role: string }} payload
      * @returns {string} signed JWT
      */
     static generateToken(payload) {
         console.log(`[JWT] New access token generated for user: ${payload.userId}`);
-        return jwt.sign(payload, config.JWT_SECRET, { expiresIn: '3m' });
+        return jwt.sign(payload, config.JWT_SECRET, { expiresIn: '1h' });
     }
 
     /** Alias kept for readability in callers. */

@@ -12,10 +12,13 @@ const CheckoutService = {
      * Initiates the mock hosted checkout flow.
      * In production: replace mock URL with Stripe/Razorpay checkout session URL.
      */
-    openCheckout(plan, price, cycle) {
+    async openCheckout(plan, price, cycle) {
         AppState.pendingPlan = plan;
         AppState.pendingPrice = price;
         AppState.pendingCycle = cycle;
+
+        // Ensure token is fresh before launching popup
+        await AuthService.ensureValidToken();
 
         const tokenParam = AppState.jwtToken ? `&token=${encodeURIComponent(AppState.jwtToken)}` : "";
         const checkoutUrl = `${ApiService.BASE}/api/payments/checkout?plan=${encodeURIComponent(plan)}&price=${price}&cycle=${encodeURIComponent(cycle)}&email=${encodeURIComponent(AppState.userEmail || "")}${tokenParam}`;

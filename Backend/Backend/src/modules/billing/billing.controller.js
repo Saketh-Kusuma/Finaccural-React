@@ -2,6 +2,7 @@
 
 const BillingService     = require('./billing.service');
 const UserRepository     = require('../auth/user.repository');
+const JwtService         = require('../auth/jwt.service');
 const logger             = require('../../core/logger');
 const { ValidationError } = require('../../core/errors/AppError');
 
@@ -92,6 +93,42 @@ class BillingController {
         // the rendered page's own JS — so the page's own completion request
         // had no way to authenticate and was always rejected with 401.
         const token = req.query.token || '';
+
+        // If a token parameter was supplied, verify it hasn't expired
+        if (token) {
+            try {
+                JwtService.verifyToken(token);
+            } catch (err) {
+                logger.warn('[Billing] Token expired or invalid during checkout access:', err.message);
+                return res.status(401).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinAccrual – Session Expired</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; color: #1e293b; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 36px 28px; text-align: center; max-width: 420px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); }
+    .icon { font-size: 48px; margin-bottom: 16px; line-height: 1; }
+    h2 { font-size: 20px; font-weight: 700; margin: 0 0 10px; color: #0f172a; }
+    p { font-size: 14px; color: #64748b; margin: 0 0 24px; line-height: 1.6; }
+    .btn { display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: background 0.15s ease; }
+    .btn:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⏰</div>
+    <h2>Session Expired</h2>
+    <p>Your authentication session has expired. Please return to the FinAccrual add-in in Excel, sign in, and try opening checkout again.</p>
+    <button class="btn" onclick="window.close()">Close Window</button>
+  </div>
+</body>
+</html>`);
+            }
+        }
 
         let userId = '';
         if (email) {

@@ -28,7 +28,7 @@ class TokenManager {
             );
         }
 
-        // If access token is valid and expires more than 5 minutes from now, return it
+        // If access token is valid and expires more than 1 minute from now, return it
         if (!this.isExpiringSoon(tokenRecord.expiresAt)) {
             return tokenRecord.accessToken;
         }
@@ -97,14 +97,14 @@ class TokenManager {
     }
 
     /**
-     * Check if a token expires in less than 5 minutes.
+     * Check if a token expires in less than 1 minute.
      * @param {Date|null} expiresAt
      * @returns {boolean}
      */
     isExpiringSoon(expiresAt) {
         if (!expiresAt) return true;
-        const FIVE_MINUTES_MS = 5 * 60 * 1000;
-        return (new Date(expiresAt).getTime() - Date.now()) < FIVE_MINUTES_MS;
+        const ONE_MINUTE_MS = 1 * 60 * 1000;
+        return (new Date(expiresAt).getTime() - Date.now()) < ONE_MINUTE_MS;
     }
 
     /**

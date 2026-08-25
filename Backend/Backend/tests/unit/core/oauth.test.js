@@ -43,11 +43,11 @@ describe('OAuth Token Management System', () => {
             expect(mockRepository.saveToken).not.toHaveBeenCalled();
         });
 
-        it('should perform refresh, save and return new token if token is expiring soon', async () => {
+        it('should perform refresh, save and return new token if token is expiring soon (less than 1 min)', async () => {
             const expiringTokenRecord = {
                 accessToken: 'expiring_access_token',
                 refreshToken: 'refresh_token_123',
-                expiresAt: new Date(Date.now() + 4 * 60 * 1000) // 4 minutes (expiring soon)
+                expiresAt: new Date(Date.now() + 30 * 1000) // 30 seconds (expiring soon < 1min)
             };
             const refreshedTokens = {
                 accessToken: 'new_access_token_456',
@@ -108,7 +108,7 @@ describe('OAuth Token Management System', () => {
             const expiringTokenRecord = {
                 accessToken: 'expiring_access_token',
                 refreshToken: 'refresh_token_123',
-                expiresAt: new Date(Date.now() + 4 * 60 * 1000) // expiring soon
+                expiresAt: new Date(Date.now() + 30 * 1000) // expiring soon (< 1 min)
             };
             const refreshedTokens = {
                 accessToken: 'new_access_token_456',

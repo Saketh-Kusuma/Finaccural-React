@@ -288,32 +288,39 @@ const AuthService = {
 
     _tokenRefreshInterval: null,
 
+    async ensureValidToken() {
+        if (!AppState.refreshToken) return AppState.jwtToken;
+        try {
+            const refreshRes = await fetch(`${ApiService.BASE}/api/auth/refresh`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refreshToken: AppState.refreshToken })
+            });
+            if (refreshRes.ok) {
+                const data = await refreshRes.json();
+                AppState.jwtToken = data.token;
+                AppState.refreshToken = data.refreshToken;
+                AppState.sessionExpired = false;
+                localStorage.setItem("fa_jwt_token", data.token);
+                localStorage.setItem("fa_refresh_token", data.refreshToken);
+            }
+        } catch (err) {
+            console.error("Token refresh failed during pre-flight check:", err);
+        }
+        return AppState.jwtToken;
+    },
+
     startTokenRefreshTimer() {
         if (this._tokenRefreshInterval) {
             clearInterval(this._tokenRefreshInterval);
         }
-        // Since access token expires in 3 minutes (180,000 ms),
-        // we proactively refresh it 1 minute before expiry (every 2 minutes / 120,000 ms).
+        // Since access token expires in 1 hour (3,600,000 ms),
+        // we proactively refresh it every 30 minutes (1,800,000 ms).
         this._tokenRefreshInterval = setInterval(async () => {
             if (AppState.jwtToken && AppState.refreshToken && !AppState.sessionExpired) {
-                try {
-                    const refreshRes = await fetch(`${ApiService.BASE}/api/auth/refresh`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ refreshToken: AppState.refreshToken })
-                    });
-                    if (refreshRes.ok) {
-                        const data = await refreshRes.json();
-                        AppState.jwtToken = data.token;
-                        AppState.refreshToken = data.refreshToken;
-                        localStorage.setItem("fa_jwt_token", data.token);
-                        localStorage.setItem("fa_refresh_token", data.refreshToken);
-                    }
-                } catch (err) {
-                    console.error("Proactive token refresh failed:", err);
-                }
+                await this.ensureValidToken();
             }
-        }, 120 * 1000);
+        }, 30 * 60 * 1000);
     },
 
     _persistSubscription() {
