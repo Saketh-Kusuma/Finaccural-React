@@ -1,61 +1,89 @@
-# FinAccrual ERP
-A full-stack ERP synchronization platform for accounting firms, integrating with **QuickBooks Online** and **Xero** to automate accrual schedules, journal entries, client management, and financial reporting.
+#  FinAccrual ERP Platform
+
+A full-stack ERP synchronization platform for accounting firms, integrating with **QuickBooks Online** and **Xero** to automate accrual schedules, master data streaming, journal entries, client management, and financial reporting directly inside Microsoft Excel.
+
 ---
-## Project Structure
+
+##  Platform Architecture
+
 ```
-D:\ERP\
-├── Admin/       — React + TypeScript Admin Dashboard (Vite)
-├── Backend/     — Node.js / Express API (SQLite, QuickBooks & Xero OAuth2)
-└── Frontend/    — Microsoft Excel Add-in (Office JS / Webpack)
+fin-12.30/
+├── Admin/       — React 18 + TypeScript Admin Dashboard (Vite, Monolithic Context Store)
+├── Backend/     — Node.js / Express 5 API (SQLite, SSE Streaming, QuickBooks & Xero OAuth2)
+└── Frontend/    — Microsoft Excel Add-in (Office JS, Webpack, Streamed Synchronization)
 ```
+
 ---
-## Sub-Projects
-### Admin (`/Admin`)
-A modern React dashboard for accounting firm staff to manage clients, accrual schedules, journal entries, master data, exports, and workpapers.
-- **Tech Stack**: React 18 + TypeScript, Vite, React Router v7, Context API + useReducer, Vanilla CSS, Lucide React, Sonner
-- **Getting Started**:
-  ```bash
-  cd Admin
-  npm install
-  npm run dev
-  ```
-- Runs on: `http://localhost:5173`
+
+##  Key Platform Features
+
+###  Excel Add-in (Frontend)
+- **Streamed Master Data Synchronization**: Real-time Server-Sent Events (SSE) streaming (`/api/pull-master-data`) to populate Accounts, Classes, Locations, Customers, and Vendors directly into Excel.
+- **Incremental Refresh Schedule**:
+  - Requires **Setup Master & Input Sheets** AND **Pull Master Data** steps to be completed before allowing execution.
+  - Performs multi-block ID deduplication across all 5 sheet tables (Company, Accounts, Classes, Locations, Entities).
+  - Appends only new/updated records below existing rows without duplicating data.
+  - Displays accurate notifications reporting exact updated record counts (e.g., `1 updated record added.` or `0 updated records added.`).
+- **Free Trial Lifecycle & Navigation Protection**:
+  - 2-minute free trial lifecycle with real-time expiration monitoring.
+  - Clears sheet data on expiration and displays the Upgrade modal.
+  - Back-arrow navigation guard on the Plans View (`#btnPlansBack`) that prevents returning to the Dashboard when trial is expired.
+  - Data action guards blocking Setup, Pull, and Refresh when trial is expired.
+- **Multi-Company Management**: Instant active company switching with automatic state cleanup, step resets, and cursor clearance.
+
+###  Backend API (`/Backend`)
+- **OAuth 2.0 Integration**: Decoupled QuickBooks Online and Xero authentication token management.
+- **Automatic Token Rotation**: Transparent 15-minute JWT session expiration handling with automatic `/api/auth/refresh` retries.
+- **SSE Streaming**: Live streaming endpoint for paginated and chunked master data responses.
+
+###  Admin Dashboard (`/Admin`)
+- **Firm Management**: CRUD interfaces for Clients, Schedules, Accounts, and Journal Entries.
+- **Global Monolithic State**: Real-time statistical tracking across Active Clients, Schedules, and Data Uploads.
+
 ---
-### Backend (`/Backend`)
-A Node.js REST API that handles OAuth2 flows with QuickBooks and Xero, stores session state, and exposes data endpoints consumed by both the Admin dashboard and the Excel Add-in.
-- **Tech Stack**: Node.js, Express, SQLite, express-session
-- **Getting Started**:
-  ```bash
-  cd Backend
-  cp .env.example .env        # Fill in your real credentials
-  npm install
-  node index.js
-  ```
-- Runs on: `http://localhost:8000`
-> **Security Note**: Never commit your `.env` file. Use `.env.example` as the template.
+
+##  Sub-Projects Setup
+
+### 1. Backend API (`/Backend`)
+```bash
+cd Backend/Backend
+cp .env.example .env        # Configure QuickBooks and Xero API credentials
+npm install
+npm run dev                 # Starts API server on http://localhost:8000
+```
+
+### 2. Excel Taskpane Add-in (`/Frontend`)
+```bash
+cd Frontend
+npm install
+npm run dev-server          # Starts Webpack dev server on https://localhost:3000
+npm run build               # Builds production bundle
+npm start                   # Sideloads Add-in inside Desktop Excel
+```
+
+### 3. Admin Dashboard (`/Admin`)
+```bash
+cd Admin
+npm install
+npm run dev                 # Starts Vite dev server on http://localhost:5173
+```
+
 ---
-### Frontend (`/Frontend`)
-A Microsoft Excel Add-in built with Office JS that allows accountants to pull live data directly into Excel spreadsheets, manage accrual schedules, and post journal entries without leaving Excel.
-- **Tech Stack**: Office JS, Webpack, Babel
-- **Getting Started**:
-  ```bash
-  cd Frontend
-  npm install
-  npm run start           # Starts the dev server and sideloads the add-in
-  ```
-- Requires Microsoft Excel (Desktop or Online) with the `manifest.xml` sideloaded.
----
-## Prerequisites
+
+##  Prerequisites
 - Node.js >= 18.x
 - npm >= 9.x
-- Microsoft Excel (for the Excel Add-in)
-- QuickBooks Online developer account ([developer.intuit.com](https://developer.intuit.com))
-- Xero developer account ([developer.xero.com](https://developer.xero.com))
+- Microsoft Excel (Desktop or Excel Online)
+- QuickBooks Online Developer Account ([developer.intuit.com](https://developer.intuit.com))
+- Xero Developer Account ([developer.xero.com](https://developer.xero.com))
+
 ---
-## Security
-- **Do NOT commit** `.env` files with real credentials.
-- Rotate any exposed API keys immediately via the respective developer portals.
-- Review `Backend/.env.example` for all required environment variables.
+
+##  Security
+- **Do NOT commit** `.env` files containing real Client Secrets or Session Secrets.
+- Review `Backend/Backend/src/core/config/` for environment variable rules.
+
 ---
-## License
-MIT © 2024 FinAccrual ERP. See [LICENSE](./LICENSE) for details.
+
+##  License
+MIT © 2026 FinAccrual ERP Platform. See [LICENSE](./LICENSE) for details.

@@ -1,4 +1,4 @@
-# 🏢 Backend ERP Project
+#  Backend ERP Project
 
 ## 1. Project Title
 **FinAccrual Node Backend (ERP System)**

@@ -1,8 +1,8 @@
-# 📊 FinAccrual Excel Add-in (Frontend)
+#  FinAccrual Excel Add-in (Frontend)
 
 This directory contains the Microsoft Excel Taskpane Add-in built using Office JS. It allows users to authenticate with QuickBooks or Xero, create worksheets for accrual tracking inside Excel, and pull metadata directly into spreadsheet cells.
 
-## 🚀 Key Features
+##  Key Features
 
 - **Multi-provider Support**: Dropdown configuration selectors for QuickBooks and Xero.
 - **Accrual Sheet Setup**: Automation script that sets up standard columns across 5 section blocks (Company, Accounts, Classes, Locations, Entities) with styled headers and freeze panes.
@@ -21,7 +21,7 @@ This directory contains the Microsoft Excel Taskpane Add-in built using Office J
   - Smooth active company selection with instant state cleanup.
   - Automatically resets step completion flags and clears pagination cursors upon company switch.
 
-## 🛠️ Folder Structure
+##  Folder Structure
 
 ```
 Frontend/
@@ -41,7 +41,7 @@ Frontend/
 └── webpack.config.js   # Webpack bundler configuration
 ```
 
-## ⚙️ Getting Started & Sideloading
+##  Getting Started & Sideloading
 
 ### Prerequisites
 - Node.js (v18.x+)
