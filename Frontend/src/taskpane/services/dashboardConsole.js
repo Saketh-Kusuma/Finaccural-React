@@ -59,8 +59,10 @@ export function createDashboardConsole() {
         _appendLogLine(log, message, timestampIso) {
             const line = document.createElement("div");
             line.className = "log-line";
-            if (message.toLowerCase().includes("error")) {
-                line.style.color = "#ef4444"; // Red color for errors
+            // Failure lines render red (.log-line.log-error); everything
+            // else inherits the console's success green from .conn-log.
+            if (/error|fail|failed|unable|denied|invalid|not found|rejected/i.test(message)) {
+                line.classList.add("log-error");
             }
             const timeLabel = new Date(timestampIso).toLocaleTimeString();
             line.textContent = `[${timeLabel}] ${message}`;
