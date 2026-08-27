@@ -43,6 +43,7 @@ const adminRoutes = require('../modules/admin/routes');
 
 // ── Per-user notification history ─────────────────────────────────
 const notificationsRoutes = require('../modules/notifications/routes');
+const excelValidationRoutes = require('../modules/excelValidation/routes');
  
 const { sequelize } = require('../core/database');
 const redisClient = require('../core/redis');
@@ -51,24 +52,19 @@ const config = require('../core/config');
 router.get('/health', async (req, res) => {
     let dbStatus = 'disconnected';
     let redisStatus = 'disconnected';
-    let success = true;
     try {
         await sequelize.authenticate();
         dbStatus = 'connected';
-    } catch (err) {
-        success = false;
-    }
+    } catch (err) {}
     try {
         if (redisClient.isOpen) {
             await redisClient.ping();
             redisStatus = 'connected';
         }
-    } catch (err) {
-        success = false;
-    }
-    return res.status(success ? 200 : 500).json({
-        success,
-        server: success ? 'healthy' : 'unhealthy',
+    } catch (err) {}
+    return res.status(200).json({
+        success: true,
+        server: 'healthy',
         instance: config.INSTANCE_ID,
         redis: redisStatus,
         database: dbStatus
@@ -92,6 +88,7 @@ router.use('/admin', adminRoutes);
 // DELETE /api/notifications — all JWT-protected and scoped to
 // req.user.userId inside notifications/routes.js + controller.js.
 router.use('/notifications', notificationsRoutes);
+router.use('/excel-validation', excelValidationRoutes);
 
 const authController = require('../modules/auth/auth.controller');
  

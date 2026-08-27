@@ -16,6 +16,7 @@ import { NotificationService } from "../services/notificationService.js";
 import { DashboardService } from "../services/dashboardService.js";
 import { bindDataActionHandlers } from "./dataActionBindings.js";
 import { clearPullPageCursor } from "../batchDataLoader.js";
+import { checkConnectionStatus } from "../../shared/apiErrorHandler.js";
 
 export function bindDashboardView() {
 
@@ -131,6 +132,7 @@ export function bindDashboardView() {
 
     // Connect QuickBooks — check if accounts already exist in DB first
     document.getElementById("btnConnectQB")?.addEventListener("click", async () => {
+        if (!await checkConnectionStatus()) return;
         try {
             const mail = AppState.userEmail || "";
             const res = await ApiService.apiFetch(`/api/connections?mail=${encodeURIComponent(mail)}`);
@@ -155,6 +157,7 @@ export function bindDashboardView() {
 
     // Connect Xero — check if accounts already exist in DB first
     document.getElementById("btnConnectXero")?.addEventListener("click", async () => {
+        if (!await checkConnectionStatus()) return;
         try {
             const mail = AppState.userEmail || "";
             const res = await ApiService.apiFetch(`/api/connections?mail=${encodeURIComponent(mail)}`);
@@ -178,7 +181,8 @@ export function bindDashboardView() {
     });
 
     // Connect Provider button in provider-selected state — launches OAuth
-    document.getElementById("btnConnectProvider")?.addEventListener("click", () => {
+    document.getElementById("btnConnectProvider")?.addEventListener("click", async () => {
+        if (!await checkConnectionStatus()) return;
         DashboardService.launchERPOAuth(AppState.currentProvider);
     });
 
@@ -197,7 +201,8 @@ export function bindDashboardView() {
     // Uses the currently active ERP provider so that:
     //   - Xero dashboard  → opens Xero OAuth
     //   - QuickBooks dashboard → opens QuickBooks OAuth
-    const handleAddCompanyClick = () => {
+    const handleAddCompanyClick = async () => {
+        if (!await checkConnectionStatus()) return;
         ExcelService.clearMasterData().catch(err => console.error("Error clearing Excel data: ", err));
         const currentPlan = (AppState.subscriptionPlan && AppState.subscriptionPlan !== 'null') ? AppState.subscriptionPlan : "Basic";
         const maxAllowed = getMaxCompaniesForPlan(currentPlan);
@@ -368,7 +373,8 @@ export function bindDashboardView() {
     });
 
     // Dropdown selection change
-    document.getElementById("companySelectDropdown")?.addEventListener("change", (e) => {
+    document.getElementById("companySelectDropdown")?.addEventListener("change", async (e) => {
+        if (!await checkConnectionStatus()) return;
         const dropdown = e.target;
         const opt = dropdown.options[dropdown.selectedIndex];
         if (opt) {

@@ -20,7 +20,7 @@ import {
     setPullPageCursor,
     clearPullPageCursor
 } from "../batchDataLoader.js";
-import { ERROR_CODES } from "../../shared/apiErrorHandler.js";
+import { ERROR_CODES, checkConnectionStatus } from "../../shared/apiErrorHandler.js";
 
 function checkTrialExpiredGuard(provider) {
     if (AppController.isTrialExpired()) {
@@ -38,6 +38,7 @@ export function bindDataActionHandlers() {
 
     // Setup Sheets button in provider-selected state
     document.getElementById("setupBtnProv")?.addEventListener("click", async () => {
+        if (!await checkConnectionStatus()) return;
         if (checkTrialExpiredGuard(AppState.currentProvider)) return;
         try {
             document.getElementById("provStepSetup")?.classList.add("active");
@@ -84,8 +85,9 @@ export function bindDataActionHandlers() {
     // QuickBooks request for that single entity; this handler
     // never fetches everything and slices it client-side.
     const handlePullClick = async (event) => {
-        const button = event.currentTarget;
-        const isProv = button.id === "pullBtnProv";
+        if (!await checkConnectionStatus()) return;
+        const button = (event && event.currentTarget) || document.getElementById("pullBtnProv") || document.getElementById("pullBtn");
+        const isProv = button ? button.id === "pullBtnProv" : false;
         const provider = AppState.currentProvider;
         const companyId = AppState.currentCompanyId;
         const providerLabel = provider === "quickbooks" ? "QuickBooks" : "Xero";
@@ -180,16 +182,24 @@ export function bindDataActionHandlers() {
         } catch (error) {
             console.error(error);
             const isExpired = error.code === ERROR_CODES.ERP_SESSION_EXPIRED;
-            const msg = isExpired
-                ? error.message
-                : "Error pulling data: " + error.message;
-            DashboardService.addLog(msg);
-            DashboardService.showStatus(
-                isExpired ? error.message : (isProv ? "Data pull failed." : "Please set up the master sheet before pulling the master data"),
-                "error",
-                isExpired ? "" : (isProv ? "Please try again." : ""),
-                provider
-            );
+            const isConnRefused = error.code === ERROR_CODES.CONNECTION_REFUSED || (typeof navigator !== "undefined" && !navigator.onLine);
+
+            if (isConnRefused) {
+                await checkConnectionStatus();
+                DashboardService.addLog("Pull Master Data failed: Network or server unreachable.");
+                DashboardService.showStatus("Data pull failed.", "error", "Please check your internet / server connection.", provider);
+            } else {
+                const msg = isExpired
+                    ? error.message
+                    : "Error pulling data: " + error.message;
+                DashboardService.addLog(msg);
+                DashboardService.showStatus(
+                    isExpired ? error.message : (isProv ? "Data pull failed." : "Please set up the master sheet before pulling the master data"),
+                    "error",
+                    isExpired ? "" : (isProv ? "Please try again." : ""),
+                    provider
+                );
+            }
             if (isExpired) {
                 try {
                     DashboardService.renderERPSection();
@@ -214,6 +224,7 @@ export function bindDataActionHandlers() {
 
     // Setup Sheets button
     document.getElementById("setupBtn")?.addEventListener("click", async () => {
+        if (!await checkConnectionStatus()) return;
         if (checkTrialExpiredGuard(AppState.currentProvider)) return;
         try {
             const stepSetupId = AppState.currentProvider === "quickbooks" ? "stepSetup" : "xeroStepSetup";
@@ -296,8 +307,8 @@ export function bindDataActionHandlers() {
 
     // Refresh Schedule buttons
     const handleRefreshClick = async (event) => {
-        const button = event.currentTarget;
-
+        if (!await checkConnectionStatus()) return;
+        const button = (event && event.currentTarget) || document.getElementById("btnRefreshScheduleProv") || document.getElementById("btnRefreshSchedule");
         const provider = AppState.currentProvider;
         const companyId = AppState.currentCompanyId;
         const providerLabel = provider === "quickbooks" ? "QuickBooks" : "Xero";
@@ -319,7 +330,7 @@ export function bindDataActionHandlers() {
             return;
         }
 
-        const icon = button.querySelector(".refresh-icon");
+        const icon = button ? button.querySelector(".refresh-icon") : null;
         if (icon) icon.classList.add("spin");
 
         try {

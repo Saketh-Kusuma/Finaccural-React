@@ -16,7 +16,8 @@ import {
     networkError,
     showBanner,
     hideBanner,
-    showToast
+    showToast,
+    checkConnectionStatus
 } from "../../shared/apiErrorHandler.js";
 import { getFriendlyMessage } from "../../shared/errorMessages.js";
 
@@ -40,15 +41,7 @@ const ApiService = {
     handleGlobalApiError(apiErr, opts = {}) {
         switch (apiErr.code) {
             case ERROR_CODES.CONNECTION_REFUSED: {
-                showBanner({
-                    type: "offline",
-                    message: apiErr.message,
-                    actionLabel: "Retry",
-                    onAction: () => {
-                        hideBanner();
-                        if (opts.retry) opts.retry();
-                    }
-                });
+                checkConnectionStatus();
                 break;
             }
             case ERROR_CODES.SESSION_EXPIRED: {

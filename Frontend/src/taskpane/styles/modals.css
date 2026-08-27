@@ -40,6 +40,16 @@
   to   { transform: translateY(0); }
 }
 
+.fa-banner-flash {
+  animation: faBannerShake 0.35s ease-in-out !important;
+}
+
+@keyframes faBannerShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
 .fa-global-banner-icon {
   font-size: 14px;
   flex-shrink: 0;

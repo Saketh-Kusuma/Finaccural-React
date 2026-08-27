@@ -140,6 +140,10 @@ export function createDashboardConsole() {
          * @param {"quickbooks"|"xero"} [provider] - which ERP this belongs to, if any
          */
         showStatus(message, type, detail, provider) {
+            if (typeof window !== "undefined" && window._faIsOffline) return;
+            const banner = document.getElementById("faGlobalBanner");
+            if (banner && banner.style.display !== "none" && banner.style.display !== "") return;
+
             if (typeof message === "string" && !message.trim().endsWith("...")) {
                 NotificationService.add(message, type, detail, provider);
             }

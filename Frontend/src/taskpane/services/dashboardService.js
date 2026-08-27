@@ -15,6 +15,7 @@ import { NotificationService } from "./notificationService.js";
 import { createDashboardConsole } from "./dashboardConsole.js";
 import { createErpConnection } from "./erpConnectionService.js";
 import { clearPullPageCursor } from "../batchDataLoader.js";
+import { checkConnectionStatus } from "../../shared/apiErrorHandler.js";
 
 const DashboardService = {
 
@@ -566,7 +567,12 @@ const DashboardService = {
                 this.renderActiveLogConsole();
                 this.applyStepState();
             })
-            .catch(() => {
+            .catch(async () => {
+                const isOnline = await checkConnectionStatus();
+                if (!isOnline && AppState.erpConnected) {
+                    if (connSection) connSection.style.display = "flex";
+                    return;
+                }
                 // Fallback to offline/disconnected view
                 if (discSection) {
                     discSection.style.display = "flex";
@@ -610,7 +616,8 @@ const DashboardService = {
         return date.toLocaleDateString();
     },
 
-    switchActiveCompany(companyId, conns) {
+    async switchActiveCompany(companyId, conns) {
+        if (!await checkConnectionStatus()) return;
         AppState.currentCompanyId = companyId;
 
         // Set the provider immediately from the target company so renderERPSection shows correct platform
