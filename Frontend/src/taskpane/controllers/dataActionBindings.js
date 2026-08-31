@@ -29,6 +29,7 @@ function checkTrialExpiredGuard(provider) {
         DashboardService.showStatus("Trial Expired", "error", "Please upgrade your plan to perform data actions.", provider);
         const modal = document.getElementById("trialExpiredModal");
         if (modal) modal.style.display = "flex";
+        ExcelService.clearMasterData().catch(e => console.error("Failed to clear master data on trial expired guard", e));
         return true;
     }
     return false;
@@ -194,9 +195,9 @@ export function bindDataActionHandlers() {
                     : "Error pulling data: " + error.message;
                 DashboardService.addLog(msg);
                 DashboardService.showStatus(
-                    isExpired ? error.message : (isProv ? "Data pull failed." : "Please set up the master sheet before pulling the master data"),
+                    isExpired ? error.message : "Data pull failed.",
                     "error",
-                    isExpired ? "" : (isProv ? "Please try again." : ""),
+                    isExpired ? "" : "Please try again.",
                     provider
                 );
             }

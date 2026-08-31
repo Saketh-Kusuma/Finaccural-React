@@ -130,6 +130,9 @@ export function createTrialController() {
                 // Trial local time is up. Stop watcher and check real backend status
                 AppController.stopTrialExpirationWatcher();
 
+                const currentView = ViewRouter.getCurrentView();
+                const isOnUpgradeScreens = currentView === "Plans" || currentView === "Payment" || currentView === "Success";
+
                 ApiService.apiFetch("/api/auth/me")
                     .then(r => (r.ok ? r.json() : null))
                     .then(result => {
@@ -142,11 +145,11 @@ export function createTrialController() {
                             if (isExpired) {
                                 AppState.subscriptionPlan = u.plan;
                                 localStorage.setItem("fa_subscription_plan", u.plan);
+                                ExcelService.clearMasterData().catch(e => console.error("Failed to clear master data on trial expiry", e));
 
                                 const modal = document.getElementById("trialExpiredModal");
-                                if (modal && modal.style.display !== "flex") {
+                                if (modal && modal.style.display !== "flex" && !isOnUpgradeScreens) {
                                     modal.style.display = "flex";
-                                    ExcelService.clearMasterData().catch(e => console.error("Failed to clear master data on trial expiry", e));
                                 }
                             } else {
                                 // Backend confirms still active (e.g. upgraded on another device)
@@ -165,10 +168,10 @@ export function createTrialController() {
                     })
                     .catch(e => {
                         console.error("Failed to check subscription status on trial expiry", e);
+                        ExcelService.clearMasterData().catch(err => console.error(err));
                         const modal = document.getElementById("trialExpiredModal");
-                        if (modal && modal.style.display !== "flex") {
+                        if (modal && modal.style.display !== "flex" && !isOnUpgradeScreens) {
                             modal.style.display = "flex";
-                            ExcelService.clearMasterData().catch(err => console.error(err));
                         }
                     });
             }
@@ -231,6 +234,7 @@ export function createTrialController() {
             if (btnUpgrade) {
                 btnUpgrade.addEventListener("click", () => {
                     if (modal) modal.style.display = "none";
+                    AppController.stopTrialExpirationWatcher();
                     ViewRouter.show("Plans");
                 });
             }

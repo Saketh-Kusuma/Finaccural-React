@@ -232,7 +232,8 @@ export async function checkConnectionStatus() {
             signal: controller ? controller.signal : undefined
         });
         if (timeoutId) clearTimeout(timeoutId);
-        if (res.ok) {
+        if (res && (res.ok || res.status > 0)) {
+            if (typeof window !== "undefined") window._faIsOffline = false;
             hideBanner();
             return true;
         }

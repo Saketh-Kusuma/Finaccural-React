@@ -20,12 +20,13 @@ const { LimitReachedError } = require('../errors/AppError');
  * ----------------------------------------------------------------
  */
 
-function buildLimiter({ windowMs, max, message }) {
+function buildLimiter({ windowMs, max, message, skip }) {
     return rateLimit({
         windowMs,
         max,
         standardHeaders: true, // RateLimit-* response headers
         legacyHeaders:    false,
+        skip: skip || (() => false),
         // Keyed by IP by default (express-rate-limit's default keyGenerator),
         // which is what we want here — these limits exist to slow down a
         // single abusive client, not to cap total traffic for the app.
@@ -48,6 +49,18 @@ function buildLimiter({ windowMs, max, message }) {
 const generalLimiter = buildLimiter({
     windowMs: 60 * 1000,     // 1 minute
     max:      process.env.NODE_ENV === 'production' ? 300 : 3000,
+    skip:     (req) => {
+        const p = req.path || '';
+        const orig = req.originalUrl || '';
+        return p === '/health' || p === '/health/' ||
+               p.startsWith('/payments') ||
+               p.startsWith('/subscription/upgrade') ||
+               p.startsWith('/auth/refresh-token') ||
+               orig.includes('/api/health') ||
+               orig.includes('/api/payments') ||
+               orig.includes('/api/subscription/upgrade') ||
+               orig.includes('/api/auth/refresh-token');
+    },
     message:  'Too many requests. Please slow down and try again shortly.'
 });
 

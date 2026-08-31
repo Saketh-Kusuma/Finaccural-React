@@ -563,20 +563,36 @@ const ExcelService = {
             sheets.load("items/name");
             await context.sync();
 
-            let otherSheetExists = false;
-            for (let i = 0; i < sheets.items.length; i++) {
-                const name = sheets.items[i].name;
-                if (name !== "1.Master_Data" && name !== "2.Input") {
-                    otherSheetExists = true;
-                    sheets.items[i].activate();
-                    break;
+            // First wipe cell contents immediately so no data remains visible
+            if (!masterSheet.isNullObject) {
+                try { masterSheet.getRange().clear("All"); } catch (_) {}
+            }
+            if (!inputSheet.isNullObject) {
+                try { inputSheet.getRange().clear("All"); } catch (_) {}
+            }
+            await context.sync();
+
+            const existingNames = new Set(sheets.items.map(s => s.name));
+            let fallbackSheet = sheets.items.find(s => s.name !== "1.Master_Data" && s.name !== "2.Input");
+
+            if (!fallbackSheet) {
+                let newName = "Sheet1";
+                let counter = 1;
+                while (existingNames.has(newName)) {
+                    newName = `Sheet${++counter}`;
                 }
+                fallbackSheet = context.workbook.worksheets.add(newName);
             }
-            if (!otherSheetExists) {
-                context.workbook.worksheets.add("Sheet1").activate();
+
+            fallbackSheet.activate();
+            await context.sync();
+
+            if (!masterSheet.isNullObject) {
+                try { masterSheet.delete(); } catch (_) {}
             }
-            if (!masterSheet.isNullObject) masterSheet.delete();
-            if (!inputSheet.isNullObject) inputSheet.delete();
+            if (!inputSheet.isNullObject) {
+                try { inputSheet.delete(); } catch (_) {}
+            }
             await context.sync();
         });
     },

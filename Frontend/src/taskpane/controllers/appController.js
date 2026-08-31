@@ -127,10 +127,12 @@ const AppController = {
 
                         // Check expiration explicitly off the backend source of truth
                         if (AppController.isTrialExpired()) {
+                            ExcelService.clearMasterData().catch(e => console.error(e));
+                            const currentView = ViewRouter.getCurrentView ? ViewRouter.getCurrentView() : (localStorage.getItem("fa_last_view") || "");
+                            const isOnUpgradeScreens = currentView === "Plans" || currentView === "Payment" || currentView === "Success";
                             const modal = document.getElementById("trialExpiredModal");
-                            if (modal && modal.style.display !== "flex") {
+                            if (modal && modal.style.display !== "flex" && !isOnUpgradeScreens) {
                                 modal.style.display = "flex";
-                                ExcelService.clearMasterData().catch(e => console.error(e));
                             }
                         } else {
                             // If they paid and are now active, ensure modal is hidden

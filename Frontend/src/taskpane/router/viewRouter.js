@@ -29,6 +29,15 @@ const ViewRouter = {
         }
     },
 
+    /** Returns the currently active view name (e.g. "Dashboard", "Plans", "Payment"). */
+    getCurrentView() {
+        const activeView = document.querySelector(".view.active");
+        if (activeView && activeView.id) {
+            return activeView.id.replace("view", "");
+        }
+        return localStorage.getItem("fa_last_view") || "";
+    },
+
     /**
      * Opens a modal overlay by element id. No-ops when the element is absent,
      * matching the optional-chaining style used by every call site.
