@@ -111,9 +111,10 @@ class ExcelValidationService {
      * @param {Buffer} buffer
      * @param {string} sheetName
      * @param {'quickbooks'|'xero'} platform
-     * @param {string} mail - authenticated user's email
+     * @param {string} [mail] - authenticated user's email
+     * @param {string} [userId] - authenticated user's FIN ID
      */
-    static async compareWithApi(buffer, sheetName, platform, mail) {
+    static async compareWithApi(buffer, sheetName, platform, mail, userId) {
         if (!API_COMPARABLE_SHEETS.includes(sheetName)) {
             throw new ValidationError(
                 `"${sheetName}" cannot be compared against a live API.`,
@@ -127,7 +128,7 @@ class ExcelValidationService {
             throw new ValidationError(`The uploaded workbook has no "${sheetName}" sheet.`);
         }
 
-        const result = await compareSheetWithApi({ sheetName, parsedSheet, platform, mail });
+        const result = await compareSheetWithApi({ sheetName, parsedSheet, platform, mail, userId });
         return { parsed, ...result };
     }
 
@@ -135,16 +136,17 @@ class ExcelValidationService {
      * Excel vs Database Reconciliation — diffs the "Connections" sheet
      * against this user's live QuickBooksToken/XeroToken rows.
      * @param {Buffer} buffer
-     * @param {string} mail - authenticated user's email
+     * @param {string} [mail] - authenticated user's email
+     * @param {string} [userId] - authenticated user's FIN ID
      */
-    static async compareWithDatabase(buffer, mail) {
+    static async compareWithDatabase(buffer, mail, userId) {
         const parsed = await ExcelParser.parseWorkbook(buffer);
         const parsedSheet = parsed.sheets.Connections;
         if (!parsedSheet) {
             throw new ValidationError('The uploaded workbook has no "Connections" sheet.');
         }
 
-        const result = await compareConnectionsWithDatabase({ parsedSheet, mail });
+        const result = await compareConnectionsWithDatabase({ parsedSheet, mail, userId });
         return { parsed, ...result };
     }
 }

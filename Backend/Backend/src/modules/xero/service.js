@@ -35,7 +35,7 @@ class XeroService {
      * @param {string} code - OAuth authorization code
      * @returns {object} tenant object from Xero
      */
-    static async exchangeAndSaveToken(code, sessionInfo, mail) {
+    static async exchangeAndSaveToken(code, sessionInfo, userId) {
         const credentials = encodeBasicAuth(config.XERO.CLIENT_ID, config.XERO.CLIENT_SECRET);
 
         const tokenResponse = await axios.post(
@@ -72,7 +72,7 @@ class XeroService {
                 token_type:   tokens.token_type || '',
                 scope:        tokens.scope || '',
                 session_info: sessionInfo,
-                mail:         mail,
+                user_id:      userId,
                 company_name: tenant.tenantName || 'Xero Organisation',
                 // A freshly connected organisation hasn't had a Master Data
                 // Pull yet, so it starts "Not Synced" rather than "Active" —
@@ -127,10 +127,10 @@ class XeroService {
      * @param {string[]} selectedTenantIds  - Tenant IDs chosen by the user
      * @param {object}   tokens             - Raw Xero token object (access_token, refresh_token, …)
      * @param {Array}    allTenants         - Full list of tenants from Xero /connections
-     * @param {string}   mail               - User's email
+     * @param {string}   userId             - User's FIN ID
      * @param {string}   sessionInfo        - Serialised session
      */
-    static async saveSelectedTenants(selectedTenantIds, tokens, allTenants, mail, sessionInfo) {
+    static async saveSelectedTenants(selectedTenantIds, tokens, allTenants, userId, sessionInfo) {
         const selectedSet = new Set(selectedTenantIds);
         const toSave = allTenants.filter(t => selectedSet.has(t.tenantId));
 
@@ -145,7 +145,7 @@ class XeroService {
                 token_type:    tokens.token_type    || '',
                 scope:         tokens.scope         || '',
                 session_info:  sessionInfo,
-                mail,
+                user_id:       userId,
                 company_name:  tenant.tenantName || 'Xero Organisation',
                 // See exchangeAndSaveToken above — new connections start
                 // 'Not Synced' until their first successful Master Data Pull.
@@ -173,11 +173,11 @@ class XeroService {
     /**
      * Helper to get list of active tokens for the calling user's connected
      * tenants only.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are returned.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are returned.
      * @returns {Promise<Array>}
      */
-    static async getAllTokens(mail) {
-        const tokens = await XeroTokenRepository.getActiveTokens(mail);
+    static async getAllTokens(userId) {
+        const tokens = await XeroTokenRepository.getActiveTokens(userId);
         if (!tokens || tokens.length === 0) throw new Error('Xero account is not connected.');
         return tokens;
     }
@@ -216,18 +216,18 @@ class XeroService {
     /**
      * Shared implementation behind getContacts/getAccounts/getClasses/
      * getLocations. Queries one Xero endpoint across every connected tenant
-     * for `mail`, in parallel, and tags each record with the tenant id and
+     * for `userId`, in parallel, and tags each record with the tenant id and
      * its organisation name. A tenant whose request fails is logged and
      * contributes no records rather than failing the whole call.
      *
      * @param {string} url - Xero API URL from CONSTANTS.XERO.
      * @param {Function} mapFn - (responseData) => DTO[], e.g. XeroMapper.toContactList.
      * @param {string} logLabel - Plural label used in the per-tenant error log.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are queried.
      * @returns {Promise<object[]>}
      */
-    static async _getEntityList(url, mapFn, logLabel, mail) {
-        const tokens = await XeroService.getAllTokens(mail);
+    static async _getEntityList(url, mapFn, logLabel, userId) {
+        const tokens = await XeroService.getAllTokens(userId);
         const results = await Promise.all(tokens.map(async (token) => {
             try {
                 const tenantId = token.companyId || token.tenant_id;
@@ -253,11 +253,11 @@ class XeroService {
     /**
      * Fetch all organisation details from Xero across the calling user's
      * connected tenants only.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are queried.
      * @returns {Promise<Array>}
      */
-    static async getOrganisation(mail) {
-        const tokens = await XeroService.getAllTokens(mail);
+    static async getOrganisation(userId) {
+        const tokens = await XeroService.getAllTokens(userId);
         const results = await Promise.all(tokens.map(async (token) => {
             try {
                 const tenantId = token.companyId || token.tenant_id;
@@ -281,50 +281,50 @@ class XeroService {
     /**
      * Fetch all contacts from Xero across the calling user's connected
      * tenants only.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are queried.
      * @returns {Promise<ContactDTO[]>}
      */
-    static async getContacts(mail) {
-        return XeroService._getEntityList(CONSTANTS.XERO.CONTACTS_URL, XeroMapper.toContactList, 'contacts', mail);
+    static async getContacts(userId) {
+        return XeroService._getEntityList(CONSTANTS.XERO.CONTACTS_URL, XeroMapper.toContactList, 'contacts', userId);
     }
 
     /**
      * Fetch all accounts from Xero across the calling user's connected
      * tenants only.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are queried.
      * @returns {Promise<AccountDTO[]>}
      */
-    static async getAccounts(mail) {
-        return XeroService._getEntityList(CONSTANTS.XERO.ACCOUNTS_URL, XeroMapper.toAccountList, 'accounts', mail);
+    static async getAccounts(userId) {
+        return XeroService._getEntityList(CONSTANTS.XERO.ACCOUNTS_URL, XeroMapper.toAccountList, 'accounts', userId);
     }
 
     /**
      * Fetch tracking categories for classes from Xero across the calling
      * user's connected tenants only.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are queried.
      * @returns {Promise<ClassDTO[]>}
      */
-    static async getClasses(mail) {
+    static async getClasses(userId) {
         return XeroService._getEntityList(
             CONSTANTS.XERO.TRACKING_CATEGORIES_URL,
             data => XeroMapper.toTrackingList(data, "class"),
             'classes',
-            mail
+            userId
         );
     }
 
     /**
      * Fetch tracking categories for locations from Xero across the calling
      * user's connected tenants only.
-     * @param {string} [mail] - Owning user's email; scopes which tenants are queried.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which tenants are queried.
      * @returns {Promise<LocationDTO[]>}
      */
-    static async getLocations(mail) {
+    static async getLocations(userId) {
         return XeroService._getEntityList(
             CONSTANTS.XERO.TRACKING_CATEGORIES_URL,
             data => XeroMapper.toTrackingList(data, "location"),
             'locations',
-            mail
+            userId
         );
     }
 
@@ -349,9 +349,9 @@ class XeroService {
         };
     }
 
-    static async listConnections(mail) {
+    static async listConnections(userId) {
         const { XeroToken } = XeroService._db();
-        const xeroWhere = mail ? { mail } : {};
+        const xeroWhere = userId ? { user_id: userId } : {};
         const xeroTokens = await XeroToken.findAll({ where: xeroWhere });
 
         return xeroTokens.map(t => ({
@@ -367,12 +367,12 @@ class XeroService {
         }));
     }
 
-    static async getConnectionStats(mail, plan) {
+    static async getConnectionStats(userId, plan) {
         const { XeroToken, Op } = XeroService._db();
         const maxAllowed = XeroService.getMaxConnections(plan);
 
         const whereClause = { status: { [Op.ne]: 'Disconnected' } };
-        if (mail) whereClause.mail = mail;
+        if (userId) whereClause.user_id = userId;
 
         const xeroCount = await XeroToken.count({ where: whereClause });
 
@@ -386,28 +386,26 @@ class XeroService {
 
     /**
      * @param {string} companyId
-     * @param {string} mail - Owning user's email. Required: without it this
-     *   would disconnect a company regardless of who owns it, letting any
-     *   authenticated user tear down another user's connection just by
-     *   knowing/guessing its companyId.
+     * @param {string} userId - Owning user's FIN ID. Required: without it this
+     *   would disconnect a company regardless of who owns it.
      */
-    static async disconnectConnection(companyId, mail) {
-        if (!mail) return false;
+    static async disconnectConnection(companyId, userId) {
+        if (!userId) return false;
         const { XeroToken } = XeroService._db();
         const [updated] = await XeroToken.update(
             { status: 'Disconnected' },
-            { where: { tenant_id: companyId, mail } }
+            { where: { tenant_id: companyId, user_id: userId } }
         );
         return updated > 0;
     }
 
     /**
      * @param {string} companyId
-     * @param {string} mail - Owning user's email. Required — see
+     * @param {string} userId - Owning user's FIN ID. Required — see
      *   disconnectConnection() above for why an ownership check matters here.
      */
-    static async activateConnection(companyId, mail) {
-        if (!mail) return false;
+    static async activateConnection(companyId, userId) {
+        if (!userId) return false;
         const { XeroToken, Op } = XeroService._db();
 
         // Selecting/switching to a connection re-activates it if it was
@@ -416,7 +414,7 @@ class XeroService {
         // (see pullMasterData).
         const [updated] = await XeroToken.update(
             { status: 'Active' },
-            { where: { tenant_id: companyId, mail, status: { [Op.ne]: 'Not Synced' } } }
+            { where: { tenant_id: companyId, user_id: userId, status: { [Op.ne]: 'Not Synced' } } }
         );
         if (updated > 0) return true;
 
@@ -424,21 +422,21 @@ class XeroService {
         // (or simply not exist) — confirm it exists (and is owned by this
         // user) so the caller still gets a truthy result for "this company
         // is now the active one".
-        const existing = await XeroToken.findOne({ where: { tenant_id: companyId, mail } });
+        const existing = await XeroToken.findOne({ where: { tenant_id: companyId, user_id: userId } });
         return !!existing;
     }
 
     /**
      * @param {string} companyId
-     * @param {string} mail - Owning user's email. Required — see
+     * @param {string} userId - Owning user's FIN ID. Required — see
      *   disconnectConnection() above for why an ownership check matters here.
      */
-    static async renameConnection(companyId, mail, companyName) {
-        if (!mail) return false;
+    static async renameConnection(companyId, userId, companyName) {
+        if (!userId) return false;
         const { XeroToken } = XeroService._db();
         const [updated] = await XeroToken.update(
             { company_name: companyName },
-            { where: { tenant_id: companyId, mail } }
+            { where: { tenant_id: companyId, user_id: userId } }
         );
         return updated > 0;
     }
@@ -446,14 +444,16 @@ class XeroService {
     /**
      * @param {string} companyId
      * @param {string} tier
-     * @param {string} mail - Owning user's email. Required — without it a
+     * @param {string} userId - Owning user's FIN ID. Required — without it a
      *   companyId-scoped pull would return (and let this user overwrite
-     *   their Excel sheet with) another user's financial data, and a
-     *   bulk (no companyId) pull would aggregate every user's connections
-     *   in the system into one response.
+     *   their Excel sheet with) another user's financial data.
+     * @param {boolean} [isIncremental=false] - When true, sends `If-Modified-Since`
+     *   on Contacts and Accounts requests so Xero returns only records modified
+     *   after `last_synced_at`. TrackingCategories always does a full fetch since
+     *   Xero does not support delta filtering on that endpoint.
      */
-    static async pullMasterData(companyId, tier, mail) {
-        if (!mail) return null;
+    static async pullMasterData(companyId, tier, userId, isIncremental = false) {
+        if (!userId) return null;
         const { XeroToken, Op } = XeroService._db();
         const maxAllowed = XeroService.getMaxConnections(tier);
 
@@ -461,11 +461,11 @@ class XeroService {
         // freshly connected organisation that has never been pulled yet
         // is still eligible for this — and only this pull is what
         // transitions it to 'Active' below. Both branches are scoped to
-        // `mail` so this can only ever touch the calling user's own
+        // `userId` so this can only ever touch the calling user's own
         // organisations.
         const rawTokens = companyId
-            ? await XeroToken.findAll({ where: { tenant_id: companyId, mail } })
-            : await XeroToken.findAll({ where: { mail, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
+            ? await XeroToken.findAll({ where: { tenant_id: companyId, user_id: userId } })
+            : await XeroToken.findAll({ where: { user_id: userId, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
 
         const tokens = rawTokens.slice(0, maxAllowed).map(t => ({
             platform:    'xero',
@@ -492,15 +492,38 @@ class XeroService {
                 //  - the refresh-token-expired pre-flight check, so a dead
                 //    connection fails fast as ErpSessionExpiredError instead
                 //    of bouncing off a live 401 first
-                const xeroGet = async (url) => {
+                //
+                // Xero returns HTTP 304 Not Modified when If-Modified-Since
+                // is sent and nothing has changed since that timestamp.
+                // axios treats 304 as an error by default — validateStatus
+                // below accepts it so we can detect "no delta" cleanly
+                // instead of falling into the .catch(() => null) path, which
+                // would wrongly silence real errors.
+                const xeroGet = async (url, extraHeaders = {}) => {
                     const accessToken = await XeroTokenManager.getValidToken(token.companyId);
                     const headers = {
                         Authorization:    `Bearer ${accessToken}`,
                         'Xero-Tenant-Id': token.companyId,
-                        Accept:           'application/json'
+                        Accept:           'application/json',
+                        ...extraHeaders
                     };
-                    return axios.get(url, { headers });
+                    return axios.get(url, {
+                        headers,
+                        // Accept 304 as a valid status so axios doesn't throw for it.
+                        // A 304 means the If-Modified-Since header was honoured and
+                        // there are no new records — the caller detects this via
+                        // response.status === 304 and treats it as an empty result.
+                        validateStatus: (status) => (status >= 200 && status < 300) || status === 304
+                    });
                 };
+
+                // When isIncremental is true and we have a lastSyncedAt timestamp,
+                // pass If-Modified-Since to fetch only contacts/accounts changed since last sync.
+                // TrackingCategories does not support If-Modified-Since — always do a full fetch.
+                const ifModifiedSince = (isIncremental && token.lastSyncedAt)
+                    ? new Date(token.lastSyncedAt).toUTCString()
+                    : null;
+                const deltaHeaders = ifModifiedSince ? { 'If-Modified-Since': ifModifiedSince } : {};
 
                 const orgSettled = await Promise.allSettled([xeroGet(CONSTANTS.XERO.ORGANISATION_URL)]);
                 if (orgSettled[0].status === 'rejected') {
@@ -532,8 +555,9 @@ class XeroService {
                 const orgRes = orgSettled[0].value;
 
                 const [contactRes, accRes, classRes] = await Promise.all([
-                    xeroGet(CONSTANTS.XERO.CONTACTS_URL).catch(() => null),
-                    xeroGet(CONSTANTS.XERO.ACCOUNTS_URL).catch(() => null),
+                    xeroGet(CONSTANTS.XERO.CONTACTS_URL, deltaHeaders).catch(() => null),
+                    xeroGet(CONSTANTS.XERO.ACCOUNTS_URL, deltaHeaders).catch(() => null),
+                    // TrackingCategories: always full fetch — no If-Modified-Since support
                     xeroGet(CONSTANTS.XERO.TRACKING_CATEGORIES_URL).catch(() => null)
                 ]);
 
@@ -600,14 +624,21 @@ class XeroService {
 
 // Register event listener for plan downgrades
 const eventBus = require('../../core/events');
-const { XeroToken } = require('../../core/database');
 
-eventBus.on('user.downgraded', async ({ email }) => {
+eventBus.on('user.downgraded', async ({ userId, email }) => {
     try {
-        const deletedCount = await XeroToken.destroy({ where: { mail: email } });
-        logger.info(`[XeroService] Plan downgrade: cleared ${deletedCount} connections for ${email}`);
+        const { XeroToken, User } = require('../../core/database');
+        let targetUserId = userId;
+        if (!targetUserId && email) {
+            const userObj = await User.findOne({ where: { email } });
+            if (userObj) targetUserId = userObj.id;
+        }
+        if (targetUserId) {
+            const deletedCount = await XeroToken.destroy({ where: { user_id: targetUserId } });
+            logger.info(`[XeroService] Plan downgrade: cleared ${deletedCount} connections for ${targetUserId}`);
+        }
     } catch (err) {
-        logger.error(`[XeroService] Failed to clear connections on downgrade for ${email}:`, err.message);
+        logger.error(`[XeroService] Failed to clear connections on downgrade for ${userId || email}:`, err.message);
     }
 });
 

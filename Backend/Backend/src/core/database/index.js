@@ -4,7 +4,7 @@ const config = require('../config');
 const sequelize = new Sequelize(config.DB.NAME, config.DB.USER, config.DB.PASSWORD, {
     host: config.DB.HOST,
     port: config.DB.PORT,
-    dialect: 'mysql',
+    dialect: 'postgres',
     logging: false
 });
 
@@ -21,9 +21,17 @@ const User = require('../../modules/auth/user.model')(sequelize);
 // can be deleted.
 const Admin = require('../../modules/admin/model')(sequelize);
 
-// Per-user notification history (see modules/notifications) — replaces
-// the old client-only localStorage `fa_notifications` store.
 const Notification = require('../../modules/notifications/notification.model')(sequelize);
+
+// Associations
+User.hasMany(QuickBooksToken, { foreignKey: 'user_id', as: 'quickbooksTokens' });
+QuickBooksToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+User.hasMany(XeroToken, { foreignKey: 'user_id', as: 'xeroTokens' });
+XeroToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications' });
+Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 module.exports = {
     sequelize,

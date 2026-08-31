@@ -3,6 +3,24 @@ const app = require('../../src/app');
 const XeroService = require('../../src/modules/xero/service');
 const XeroTokenRepository = require('../../src/modules/xero/repository');
 
+jest.mock('../../src/modules/auth/auth.middleware', () => ({
+    authenticate: (req, res, next) => {
+        req.user = { userId: 'FIN202612345', id: 'FIN202612345', email: 'user@example.com', role: 'user', name: 'Test User' };
+        next();
+    }
+}));
+
+jest.mock('../../src/core/database', () => {
+    const original = jest.requireActual('../../src/core/database');
+    return {
+        ...original,
+        XeroToken: {
+            findOne: jest.fn().mockResolvedValue(null),
+            count: jest.fn().mockResolvedValue(0)
+        }
+    };
+});
+
 jest.mock('../../src/modules/xero/service');
 jest.mock('../../src/modules/xero/repository');
 
@@ -32,7 +50,7 @@ describe('Xero Routes Integration', () => {
 
             const res = await request(app).get('/api/xero/contacts');
             expect(res.status).toBe(500);
-            expect(res.body.error).toBe('API Error');
+            expect(res.body.details).toBe('API Error');
         });
     });
 

@@ -27,7 +27,7 @@ class QuickBooksService {
      * @param {string} code   - OAuth authorization code
      * @param {string} realmId - QB company ID
      */
-    static async exchangeAndSaveToken(code, realmId, sessionInfo, mail) {
+    static async exchangeAndSaveToken(code, realmId, sessionInfo, userId) {
         const credentials = encodeBasicAuth(config.QB.CLIENT_ID, config.QB.CLIENT_SECRET);
 
         const response = await axios.post(
@@ -78,7 +78,7 @@ class QuickBooksService {
             expires_in: Math.floor(Date.now() / 1000) + (tokenData.expires_in || 0),
             x_refresh_token_expires_in: Math.floor(Date.now() / 1000) + (tokenData.x_refresh_token_expires_in || 0),
             session_info: sessionInfo,
-            mail: mail,
+            user_id: userId,
             company_name: companyName,
             // A freshly connected company hasn't had a Master Data Pull yet,
             // so it starts "Not Synced" rather than "Active" — pullMasterData
@@ -283,15 +283,15 @@ class QuickBooksService {
      * Sequentially pulls data entity by entity (Account -> Class -> Department -> Customer -> Vendor)
      * using loopless functional pipelines, MAXRESULTS=1000 page sizes, and clean event streaming.
      */
-    static async pullMasterDataMultithreaded(companyId, tier, mail, onProgress = null, isIncremental = false) {
-        if (!mail) return null;
+    static async pullMasterDataMultithreaded(companyId, tier, userId, onProgress = null, isIncremental = false) {
+        if (!userId) return null;
         const logger = require('../../config/logger');
         const { QuickBooksToken, Op } = QuickBooksService._db();
         const maxAllowed = QuickBooksService.getMaxConnections(tier);
 
         const rawTokens = companyId
-            ? await QuickBooksToken.findAll({ where: { realm_id: companyId, mail } })
-            : await QuickBooksToken.findAll({ where: { mail, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
+            ? await QuickBooksToken.findAll({ where: { realm_id: companyId, user_id: userId } })
+            : await QuickBooksToken.findAll({ where: { user_id: userId, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
 
         const tokens = rawTokens.slice(0, maxAllowed).map(t => ({
             platform:     'quickbooks',
@@ -417,10 +417,10 @@ class QuickBooksService {
      * Fetch company info and return clean CompanyDTO for a specific token or
      * all of the calling user's tokens.
      * @param {object} [token]
-     * @param {string} [mail] - Owning user's email; scopes which companies are queried when `token` isn't given.
+     * @param {string} [userId] - Owning user's FIN ID; scopes which companies are queried when `token` isn't given.
      * @returns {CompanyDTO|CompanyDTO[]|null}
      */
-    static async getCompanyInfo(token, mail) {
+    static async getCompanyInfo(token, userId) {
         if (token) {
             try {
                 const raw = await QuickBooksService.executeQuery('SELECT * FROM CompanyInfo', token);
@@ -430,7 +430,7 @@ class QuickBooksService {
             }
         }
 
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
+        const tokens = await QuickBooksTokenRepository.getActiveTokens(userId);
         if (!tokens || tokens.length === 0) return null;
 
         const companyResults = await Promise.all(tokens.map(async (t) => {
@@ -473,14 +473,14 @@ class QuickBooksService {
      * via getCompanyMetadata) is fine for a single non-paginated call,
      * but would mean 5x redundant CompanyInfo calls per token per batch
      * if repeated on every page.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {Promise<{ tokens: object[], company: CompanyDTO|CompanyDTO[]|null, orgNameByTokenId: Map<string, string> }>}
      */
-    static async getCompanyInfoAndOrgNames(mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
+    static async getCompanyInfoAndOrgNames(userId) {
+        const tokens = await QuickBooksTokenRepository.getActiveTokens(userId);
         const orgNameByTokenId = new Map();
 
-        // Match getCompanyInfo(undefined, mail)'s own no-connections
+        // Match getCompanyInfo(undefined, userId)'s own no-connections
         // behavior exactly (returns null, not []) — exportMasterData's
         // `if (company) {...}` check depends on that, and an empty
         // array is truthy in JS.
@@ -504,18 +504,18 @@ class QuickBooksService {
     /**
      * Shared implementation behind getCustomers/getVendors/getAccounts/
      * getClasses/getLocations. Queries one QBQL entity across every active
-     * token for `mail`, in parallel, and tags each record with the owning
+     * token for `userId`, in parallel, and tags each record with the owning
      * company's org name. A token whose query fails is logged and
      * contributes no records rather than failing the whole call.
      *
      * @param {string} entityName - QBQL entity, e.g. "Customer".
      * @param {Function} mapperFn - QuickBooksMapper.toXList, e.g. toCustomerList.
      * @param {string} logLabel - Plural label used in the per-token error log.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {Promise<object[]>}
      */
-    static async _getEntityList(entityName, mapperFn, logLabel, mail) {
-        const tokens = await QuickBooksTokenRepository.getActiveTokens(mail);
+    static async _getEntityList(entityName, mapperFn, logLabel, userId) {
+        const tokens = await QuickBooksTokenRepository.getActiveTokens(userId);
         const results = await Promise.all(tokens.map(async (token) => {
             try {
                 const raw = await QuickBooksService.queryAll(entityName, token);
@@ -538,51 +538,51 @@ class QuickBooksService {
     /**
      * Fetch all customers and return clean CustomerDTOs across the calling
      * user's connected companies only.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {CustomerDTO[]}
      */
-    static async getCustomers(mail) {
-        return QuickBooksService._getEntityList('Customer', QuickBooksMapper.toCustomerList, 'customers', mail);
+    static async getCustomers(userId) {
+        return QuickBooksService._getEntityList('Customer', QuickBooksMapper.toCustomerList, 'customers', userId);
     }
 
     /**
      * Fetch all vendors and return clean VendorDTOs across the calling
      * user's connected companies only.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {VendorDTO[]}
      */
-    static async getVendors(mail) {
-        return QuickBooksService._getEntityList('Vendor', QuickBooksMapper.toVendorList, 'vendors', mail);
+    static async getVendors(userId) {
+        return QuickBooksService._getEntityList('Vendor', QuickBooksMapper.toVendorList, 'vendors', userId);
     }
 
     /**
      * Fetch all accounts and return clean AccountDTOs across the calling
      * user's connected companies only.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {AccountDTO[]}
      */
-    static async getAccounts(mail) {
-        return QuickBooksService._getEntityList('Account', QuickBooksMapper.toAccountList, 'accounts', mail);
+    static async getAccounts(userId) {
+        return QuickBooksService._getEntityList('Account', QuickBooksMapper.toAccountList, 'accounts', userId);
     }
 
     /**
      * Fetch all classes and return clean ClassDTOs across the calling
      * user's connected companies only.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {ClassDTO[]}
      */
-    static async getClasses(mail) {
-        return QuickBooksService._getEntityList('Class', QuickBooksMapper.toClassList, 'classes', mail);
+    static async getClasses(userId) {
+        return QuickBooksService._getEntityList('Class', QuickBooksMapper.toClassList, 'classes', userId);
     }
 
     /**
      * Fetch all locations (departments) and return clean LocationDTOs
      * across the calling user's connected companies only.
-     * @param {string} mail - Owning user's email; scopes which companies are queried.
+     * @param {string} userId - Owning user's FIN ID; scopes which companies are queried.
      * @returns {LocationDTO[]}
      */
-    static async getLocations(mail) {
-        return QuickBooksService._getEntityList('Department', QuickBooksMapper.toLocationList, 'departments', mail);
+    static async getLocations(userId) {
+        return QuickBooksService._getEntityList('Department', QuickBooksMapper.toLocationList, 'departments', userId);
     }
 
     // ── Paginated (batch) entity fetchers ───────────────────────────────
@@ -866,9 +866,9 @@ class QuickBooksService {
         };
     }
 
-    static async listConnections(mail) {
+    static async listConnections(userId) {
         const { QuickBooksToken } = QuickBooksService._db();
-        const qbWhere = mail ? { mail } : {};
+        const qbWhere = userId ? { user_id: userId } : {};
         const qbTokens = await QuickBooksToken.findAll({ where: qbWhere });
 
         return qbTokens.map(t => ({
@@ -881,12 +881,12 @@ class QuickBooksService {
         }));
     }
 
-    static async getConnectionStats(mail, plan) {
+    static async getConnectionStats(userId, plan) {
         const { QuickBooksToken, Op } = QuickBooksService._db();
         const maxAllowed = QuickBooksService.getMaxConnections(plan);
 
         const whereClause = { status: { [Op.ne]: 'Disconnected' } };
-        if (mail) whereClause.mail = mail;
+        if (userId) whereClause.user_id = userId;
 
         const qbCount = await QuickBooksToken.count({ where: whereClause });
 
@@ -900,28 +900,26 @@ class QuickBooksService {
 
     /**
      * @param {string} companyId
-     * @param {string} mail - Owning user's email. Required: without it this
-     *   would disconnect a company regardless of who owns it, letting any
-     *   authenticated user tear down another user's connection just by
-     *   knowing/guessing its companyId.
+     * @param {string} userId - Owning user's FIN ID. Required: without it this
+     *   would disconnect a company regardless of who owns it.
      */
-    static async disconnectConnection(companyId, mail) {
-        if (!mail) return false;
+    static async disconnectConnection(companyId, userId) {
+        if (!userId) return false;
         const { QuickBooksToken } = QuickBooksService._db();
         const [updated] = await QuickBooksToken.update(
             { status: 'Disconnected' },
-            { where: { realm_id: companyId, mail } }
+            { where: { realm_id: companyId, user_id: userId } }
         );
         return updated > 0;
     }
 
     /**
      * @param {string} companyId
-     * @param {string} mail - Owning user's email. Required — see
+     * @param {string} userId - Owning user's FIN ID. Required — see
      *   disconnectConnection() above for why an ownership check matters here.
      */
-    static async activateConnection(companyId, mail) {
-        if (!mail) return false;
+    static async activateConnection(companyId, userId) {
+        if (!userId) return false;
         const { QuickBooksToken, Op } = QuickBooksService._db();
 
         // Selecting/switching to a connection re-activates it if it was
@@ -930,7 +928,7 @@ class QuickBooksService {
         // (see pullMasterData).
         const [updated] = await QuickBooksToken.update(
             { status: 'Active' },
-            { where: { realm_id: companyId, mail, status: { [Op.ne]: 'Not Synced' } } }
+            { where: { realm_id: companyId, user_id: userId, status: { [Op.ne]: 'Not Synced' } } }
         );
         if (updated > 0) return true;
 
@@ -938,21 +936,21 @@ class QuickBooksService {
         // (or simply not exist) — confirm it exists (and is owned by this
         // user) so the caller still gets a truthy result for "this company
         // is now the active one".
-        const existing = await QuickBooksToken.findOne({ where: { realm_id: companyId, mail } });
+        const existing = await QuickBooksToken.findOne({ where: { realm_id: companyId, user_id: userId } });
         return !!existing;
     }
 
     /**
      * @param {string} companyId
-     * @param {string} mail - Owning user's email. Required — see
+     * @param {string} userId - Owning user's FIN ID. Required — see
      *   disconnectConnection() above for why an ownership check matters here.
      */
-    static async renameConnection(companyId, mail, companyName) {
-        if (!mail) return false;
+    static async renameConnection(companyId, userId, companyName) {
+        if (!userId) return false;
         const { QuickBooksToken } = QuickBooksService._db();
         const [updated] = await QuickBooksToken.update(
             { company_name: companyName },
-            { where: { realm_id: companyId, mail } }
+            { where: { realm_id: companyId, user_id: userId } }
         );
         return updated > 0;
     }
@@ -960,7 +958,7 @@ class QuickBooksService {
     /**
      * @param {string} companyId
      * @param {string} tier
-     * @param {string} mail - Owning user's email. Required — without it a
+     * @param {string} userId - Owning user's FIN ID. Required — without it a
      *   companyId-scoped pull would return (and let this user overwrite
      *   their Excel sheet with) another user's financial data, and a
      *   bulk (no companyId) pull would aggregate every user's connections
@@ -977,8 +975,8 @@ class QuickBooksService {
      *   pagination one click at a time instead of this function eagerly
      *   fetching everything and the frontend slicing it.
      */
-    static async pullMasterData(companyId, tier, mail, cursorByCompany) {
-        if (!mail) return null;
+    static async pullMasterData(companyId, tier, userId, cursorByCompany) {
+        if (!userId) return null;
         const { QuickBooksToken, Op } = QuickBooksService._db();
         const maxAllowed = QuickBooksService.getMaxConnections(tier);
 
@@ -987,11 +985,11 @@ class QuickBooksService {
         // automatically the moment it's marked disconnected; it only comes
         // back once the user reconnects. 'Not Synced' connections are still
         // included since they've never had a chance to sync yet. Both
-        // branches are scoped to `mail` so this can only ever touch the
+        // branches are scoped to `userId` so this can only ever touch the
         // calling user's own companies.
         const rawTokens = companyId
-            ? await QuickBooksToken.findAll({ where: { realm_id: companyId, mail } })
-            : await QuickBooksToken.findAll({ where: { mail, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
+            ? await QuickBooksToken.findAll({ where: { realm_id: companyId, user_id: userId } })
+            : await QuickBooksToken.findAll({ where: { user_id: userId, status: { [Op.ne]: 'Disconnected' } }, order: [['updated_at', 'DESC']] });
 
         const tokens = rawTokens.slice(0, maxAllowed).map(t => ({
             platform:     'quickbooks',
@@ -1139,14 +1137,21 @@ class QuickBooksService {
 
 // Register event listener for plan downgrades
 const eventBus = require('../../core/events');
-const { QuickBooksToken } = require('../../core/database');
 
-eventBus.on('user.downgraded', async ({ email }) => {
+eventBus.on('user.downgraded', async ({ userId, email }) => {
     try {
-        const deletedCount = await QuickBooksToken.destroy({ where: { mail: email } });
-        logger.info(`[QuickBooksService] Plan downgrade: cleared ${deletedCount} connections for ${email}`);
+        const { QuickBooksToken, User } = require('../../core/database');
+        let targetUserId = userId;
+        if (!targetUserId && email) {
+            const userObj = await User.findOne({ where: { email } });
+            if (userObj) targetUserId = userObj.id;
+        }
+        if (targetUserId) {
+            const deletedCount = await QuickBooksToken.destroy({ where: { user_id: targetUserId } });
+            logger.info(`[QuickBooksService] Plan downgrade: cleared ${deletedCount} connections for ${targetUserId}`);
+        }
     } catch (err) {
-        logger.error(`[QuickBooksService] Failed to clear connections on downgrade for ${email}:`, err.message);
+        logger.error(`[QuickBooksService] Failed to clear connections on downgrade for ${userId || email}:`, err.message);
     }
 });
 

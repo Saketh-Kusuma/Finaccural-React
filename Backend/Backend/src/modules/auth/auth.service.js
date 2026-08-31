@@ -29,7 +29,7 @@ class AuthService {
 
     /**
      * Build a safe public DTO from a User model instance.
-     * Never exposes password_hash or google_id.
+     * Never exposes google_id or microsoft_id.
      * @param {object} user - Sequelize User instance
      * @returns {{ id, name, email, role, provider }}
      */
@@ -110,7 +110,7 @@ class AuthService {
         });
         const refreshToken = JwtService.generateRefreshToken();
 
-        const accessTokenExpiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+        const accessTokenExpiresAt = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour
         const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
         // Persist the new refresh token — overwrites any previous token so
@@ -139,77 +139,11 @@ class AuthService {
      * @throws {Error} if email already registered
      */
     static async signup(name, email, password) {
-        const normalised = email.toLowerCase().trim();
-
-        // Database Validation (service-level, pre-write): check uniqueness
-        // ourselves and fail with a proper 400 ValidationError, rather than
-        // letting the insert hit the DB's unique constraint and bubble up
-        // as a raw SequelizeUniqueConstraintError that errorHandler.js
-        // would otherwise have to guess at classifying.
-        const existing = await UserRepository.findByEmail(normalised);
-        if (existing) {
-            throw new ValidationError('Email already registered.');
-        }
-
-        const password_hash = await bcrypt.hash(password, 10);
-
-        const user = await UserRepository.create({
-            name:          (name || '').trim() || 'FinAccrual User',
-            email:         normalised,
-            password_hash,
-            provider:      'local',
-            role:          'user',
-            ...AuthService._newAccountDefaults()
-        });
-
-        const pair = await AuthService._buildTokenPair(user);
-
-        return {
-            token:        pair.accessToken,
-            refreshToken: pair.refreshToken,
-            user:         AuthService._toUserDTO(user)
-        };
+        throw new ValidationError('Local password authentication is disabled. Please sign in using Google or Microsoft OAuth.');
     }
 
-    /**
-     * Authenticate a local user with email and password.
-     *
-     * @param {string} email
-     * @param {string} password   Plain-text password to check.
-     * @returns {Promise<{ token: string, user: UserDTO }>}
-     * @throws {Error} if credentials are invalid
-     */
     static async login(email, password) {
-        const normalised = email.toLowerCase().trim();
-        const user       = await UserRepository.findByEmail(normalised);
-
-        // Authentication Validation: each of these three checks throws a
-        // proper operational 401 (AuthenticationError) instead of a plain
-        // Error, so it's classified correctly by errorHandler.js and by
-        // auth.controller.js's `next(error)` — a real "unreachable
-        // database" failure now stays distinguishable from "wrong
-        // password" (see auth.controller.js login() for the other half
-        // of this fix).
-        if (!user) {
-            throw new AuthenticationError('Invalid email or password.');
-        }
-
-        if (user.provider !== 'local' || !user.password_hash) {
-            throw new AuthenticationError('This account uses Google sign-in. Please use "Continue with Google".');
-        }
-
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            throw new AuthenticationError('Invalid email or password.');
-        }
-
-        const pair = await AuthService._buildTokenPair(user);
-
-        return {
-            token:        pair.accessToken,
-            refreshToken: pair.refreshToken,
-            user:         AuthService._toUserDTO(user)
-        };
+        throw new AuthenticationError('Local password authentication is disabled. Please sign in using Google or Microsoft OAuth.');
     }
 
     // ----------------------------------------------------------------
@@ -232,6 +166,10 @@ class AuthService {
         const user = await UserRepository.findByRefreshToken(refreshToken);
         if (!user || !user.is_active) {
             throw new AuthenticationError('Invalid or expired refresh token.');
+        }
+
+        if (user.refresh_token_expires_at && new Date(user.refresh_token_expires_at) < new Date()) {
+            throw new AuthenticationError('Refresh token has expired. Please log in again.');
         }
 
         // Rotate: generate a new pair and persist it
@@ -328,7 +266,7 @@ class AuthService {
             token:     pair.accessToken,
             refreshToken: pair.refreshToken,
             user:      AuthService._toUserDTO(user),
-            isNewUser: user.provider === 'google' && !user.password_hash
+            isNewUser
         };
     }
 
@@ -409,7 +347,7 @@ class AuthService {
             token:     pair.accessToken,
             refreshToken: pair.refreshToken,
             user:      AuthService._toUserDTO(user),
-            isNewUser: user.provider === 'microsoft' && !user.password_hash
+            isNewUser
         };
     }
 }

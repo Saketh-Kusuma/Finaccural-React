@@ -16,6 +16,7 @@ module.exports = (sequelize) => {
             id: {
                 type: DataTypes.STRING(13),
                 primaryKey: true,
+                immutable: true,
                 defaultValue: () => {
                     const year = new Date().getFullYear();
                     const randomDigits = Math.floor(10000 + Math.random() * 90000).toString(); // 5 digits
@@ -44,12 +45,6 @@ module.exports = (sequelize) => {
                 validate: {
                     isEmail: { msg: 'A valid email address is required.' }
                 }
-            },
-
-            // Null for OAuth-only users who never set a local password
-            password_hash: {
-                type: DataTypes.STRING,
-                allowNull: true
             },
 
             provider: {
@@ -114,7 +109,14 @@ module.exports = (sequelize) => {
             tableName: 'users',
             timestamps: true,
             createdAt: 'created_at',
-            updatedAt: 'updated_at'
+            updatedAt: 'updated_at',
+            hooks: {
+                beforeUpdate: (user) => {
+                    if (user.changed && user.changed('id')) {
+                        throw new Error('FIN ID (id) is immutable and cannot be modified once assigned.');
+                    }
+                }
+            }
         }
     );
 };

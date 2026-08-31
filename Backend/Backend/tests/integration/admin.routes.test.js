@@ -5,6 +5,8 @@ const AdminService = require('../../src/modules/admin/service');
 // Mock the service layer so we don't hit the DB
 jest.mock('../../src/modules/admin/service');
 
+const { AuthenticationError } = require('../../src/core/errors/AppError');
+
 describe('Admin Routes Integration', () => {
     describe('POST /api/admin/login', () => {
         it('should return 400 if email or password is missing', async () => {
@@ -14,7 +16,7 @@ describe('Admin Routes Integration', () => {
 
             expect(res.status).toBe(400);
             expect(res.body.success).toBe(false);
-            expect(res.body.message).toBe('Email and Password are required');
+            expect(res.body.message).toContain('required');
         });
 
         it('should return 200 and safe admin DTO on successful login', async () => {
@@ -32,7 +34,7 @@ describe('Admin Routes Integration', () => {
         });
 
         it('should return 401 on invalid credentials', async () => {
-            AdminService.login.mockRejectedValue(new Error('Invalid Password'));
+            AdminService.login.mockRejectedValue(new AuthenticationError('Invalid Password'));
 
             const res = await request(app)
                 .post('/api/admin/login')

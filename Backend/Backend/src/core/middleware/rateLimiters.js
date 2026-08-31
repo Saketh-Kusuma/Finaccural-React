@@ -48,15 +48,20 @@ function buildLimiter({ windowMs, max, message, skip }) {
  *  production limit is untouched. */
 const generalLimiter = buildLimiter({
     windowMs: 60 * 1000,     // 1 minute
-    max:      process.env.NODE_ENV === 'production' ? 300 : 3000,
+    max:      process.env.NODE_ENV === 'production' ? 300 : 10000,
     skip:     (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
         const p = req.path || '';
         const orig = req.originalUrl || '';
         return p === '/health' || p === '/health/' ||
                p.startsWith('/payments') ||
+               p.startsWith('/quickbooks') ||
+               p.startsWith('/xero') ||
                p.startsWith('/subscription/upgrade') ||
                p.startsWith('/auth/refresh-token') ||
                orig.includes('/api/health') ||
+               orig.includes('/api/quickbooks') ||
+               orig.includes('/api/xero') ||
                orig.includes('/api/payments') ||
                orig.includes('/api/subscription/upgrade') ||
                orig.includes('/api/auth/refresh-token');
@@ -67,14 +72,16 @@ const generalLimiter = buildLimiter({
 /** Tighter limit on login/signup — the classic brute-force target. */
 const authLimiter = buildLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max:      20,             // 20 attempts / 15 min / IP
+    max:      process.env.NODE_ENV === 'production' ? 20 : 1000,
+    skip:     () => process.env.NODE_ENV !== 'production',
     message:  'Too many login/signup attempts. Please wait a few minutes and try again.'
 });
 
 /** Tighter limit on the QuickBooks/Xero connect + OAuth callback routes. */
 const oauthLimiter = buildLimiter({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max:      30,             // 30 connect/callback hits / 15 min / IP
+    max:      process.env.NODE_ENV === 'production' ? 50 : 1000,
+    skip:     () => process.env.NODE_ENV !== 'production',
     message:  'Too many connection attempts. Please wait a few minutes and try again.'
 });
 

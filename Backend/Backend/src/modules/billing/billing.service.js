@@ -74,8 +74,8 @@ class BillingService {
 
         await this.userRepository.update(userId, { plan: newPlan });
 
-        if (downgraded && user.email) {
-            eventBus.emit('user.downgraded', { email: user.email, plan: newPlan });
+        if (downgraded) {
+            eventBus.emit('user.downgraded', { userId: user.id, email: user.email, plan: newPlan });
         }
 
         return { isDowngrade: downgraded, oldPlan, newPlan };
@@ -107,7 +107,7 @@ class BillingService {
         await this.userRepository.update(user.id, { plan: newPlan });
 
         if (downgraded) {
-            eventBus.emit('user.downgraded', { email, plan: newPlan });
+            eventBus.emit('user.downgraded', { userId: user.id, email, plan: newPlan });
         }
 
         return { isDowngrade: downgraded, oldPlan, newPlan };

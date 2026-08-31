@@ -30,9 +30,13 @@ module.exports = (sequelize) => {
             type: DataTypes.TEXT,
             allowNull: true
         },
-        mail: {
-            type: DataTypes.STRING(255),
-            allowNull: true
+        user_id: {
+            type: DataTypes.STRING(13),
+            allowNull: false,
+            references: {
+                model: 'users',
+                key: 'id'
+            }
         },
         company_name: {
             type: DataTypes.STRING(255),

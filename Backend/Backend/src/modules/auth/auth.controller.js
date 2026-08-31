@@ -163,10 +163,32 @@ class AuthController {
     // next sign-in attempt on the same browser.
     async logout(req, res, next) {
         try {
-            // Revoke stored tokens so the refresh token can't be reused
-            if (req.user && req.user.userId) {
-                await AuthService.revokeRefreshToken(req.user.userId);
+            let userId = req.user ? req.user.userId : (req.session ? req.session.user_id : (req.query ? req.query.userId : null));
+            const { refreshToken, token } = req.body || {};
+
+            if (!userId && refreshToken) {
+                const user = await UserRepository.findByRefreshToken(refreshToken);
+                if (user) userId = user.id;
             }
+
+            if (!userId) {
+                const authHeader = req.headers.authorization;
+                const jwtToken = (authHeader && authHeader.startsWith('Bearer '))
+                    ? authHeader.split(' ')[1]
+                    : (token || null);
+                if (jwtToken) {
+                    try {
+                        const JwtService = require('./jwt.service');
+                        const decoded = JwtService.verifyToken(jwtToken);
+                        if (decoded && decoded.userId) userId = decoded.userId;
+                    } catch (_) { }
+                }
+            }
+
+            if (userId) {
+                await AuthService.revokeRefreshToken(userId);
+            }
+
             if (req.session) {
                 req.session.destroy(() => {});
             }

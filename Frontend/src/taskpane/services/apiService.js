@@ -111,6 +111,9 @@ const ApiService = {
 
         const url = path.startsWith("http") ? path : `${this.BASE}${path}`;
         const headers = { ...(options.headers || {}) };
+        if (options.body && typeof options.body === 'string' && !headers["Content-Type"] && !headers["content-type"]) {
+            headers["Content-Type"] = "application/json";
+        }
         if (AppState.jwtToken) {
             headers["Authorization"] = `Bearer ${AppState.jwtToken}`;
         }
@@ -300,6 +303,73 @@ const ApiService = {
                             finalData = payload.data;
                         } else if (payload.type === "error") {
                             throw new Error(payload.error || "Data sync error");
+                        }
+                    } catch (pErr) {
+                        if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;
+                    }
+                }
+            }
+        }
+
+        return finalData;
+    },
+
+    /**
+     * Incremental refresh stream — fetches only records created/modified after
+     * the last sync timestamp stored in the database (`last_synced_at`).
+     *
+     * QuickBooks: uses WHERE MetaData.LastUpdatedTime >= '{last_synced_at}' QBQL filter.
+     * Xero: sends `If-Modified-Since: {last_synced_at}` header on Contacts and Accounts.
+     *       TrackingCategories (classes/locations) are always fetched fully.
+     *
+     * Falls back to a full pull automatically when `last_synced_at` is null
+     * (first-ever sync for this connection).
+     *
+     * @param {string} provider - "quickbooks" | "xero"
+     * @param {string} companyId
+     * @param {Function} [onProgress]
+     * @returns {Promise<object>} Aggregated master data (delta only)
+     */
+    async fetchIncrementalDataStream(provider, companyId, onProgress) {
+        const params = new URLSearchParams({
+            companyId: companyId || "",
+            platform: provider || "",
+            tier: AppState.currentTier || "",
+            stream: "true",
+            mode: "incremental"
+        });
+
+        const path = `/api/pull-master-data?${params.toString()}`;
+        const response = await this.apiFetch(path, { method: "GET" });
+        if (!response.ok) {
+            throw await parseApiError(response);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalData = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    try {
+                        const payload = JSON.parse(line.replace("data: ", "").trim());
+                        if (payload.type === "progress" && typeof onProgress === "function") {
+                            onProgress(payload);
+                        } else if (payload.type === "start" && typeof onProgress === "function") {
+                            onProgress(payload);
+                        } else if (payload.type === "complete") {
+                            finalData = payload.data;
+                        } else if (payload.type === "error") {
+                            throw new Error(payload.error || "Incremental sync error");
                         }
                     } catch (pErr) {
                         if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;

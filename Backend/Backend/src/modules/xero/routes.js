@@ -35,5 +35,6 @@ router.delete('/connections/:id', authenticate, controller.disconnectConnection)
 router.post('/connections/:id/activate', authenticate, controller.activateConnection);
 router.patch('/connections/:id/rename', authenticate, validate(schemas.renameConnection), controller.renameConnection);
 router.get('/pull-master-data', authenticate, validate(schemas.moduleMasterDataQuery, 'query'), controller.pullMasterData);
+router.get('/refresh-incremental', authenticate, validate(schemas.moduleMasterDataQuery, 'query'), controller.refreshIncremental);
 
 module.exports = router;

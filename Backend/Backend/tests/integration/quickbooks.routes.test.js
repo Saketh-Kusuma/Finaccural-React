@@ -3,6 +3,24 @@ const app = require('../../src/app');
 const QuickBooksService = require('../../src/modules/quickbooks/service');
 const QuickBooksTokenRepository = require('../../src/modules/quickbooks/repository');
 
+jest.mock('../../src/modules/auth/auth.middleware', () => ({
+    authenticate: (req, res, next) => {
+        req.user = { userId: 'FIN202612345', id: 'FIN202612345', email: 'user@example.com', role: 'user', name: 'Test User' };
+        next();
+    }
+}));
+
+jest.mock('../../src/core/database', () => {
+    const original = jest.requireActual('../../src/core/database');
+    return {
+        ...original,
+        QuickBooksToken: {
+            findOne: jest.fn().mockResolvedValue(null),
+            count: jest.fn().mockResolvedValue(0)
+        }
+    };
+});
+
 jest.mock('../../src/modules/quickbooks/service');
 jest.mock('../../src/modules/quickbooks/repository');
 
@@ -32,7 +50,7 @@ describe('QuickBooks Routes Integration', () => {
 
             const res = await request(app).get('/api/quickbooks/customers');
             expect(res.status).toBe(500);
-            expect(res.body.error).toBe('API Error');
+            expect(res.body.details).toBe('API Error');
         });
     });
 

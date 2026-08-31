@@ -338,8 +338,9 @@ export function bindDataActionHandlers() {
             DashboardService.addLog(`Refreshing live data from ${providerLabel}...`);
             DashboardService.showStatus("Refreshing...", "success", null, provider);
 
-            // Fetch complete master data stream to compare against existing sheet records
-            const data = await ApiService.fetchMasterDataStream(provider, companyId);
+            // Fetch ONLY records modified since last_synced_at (delta / incremental refresh).
+            // Falls back to a full pull automatically on first sync (last_synced_at === null).
+            const data = await ApiService.fetchIncrementalDataStream(provider, companyId);
             const batch = flattenAllMasterDataRecords(data, { includeCompany: false });
 
             // Append batch without duplicates and return exact new record count written
@@ -352,8 +353,8 @@ export function bindDataActionHandlers() {
 
             const refreshTitle = "Schedule Refreshed";
             if (updatedCount === 0) {
-                DashboardService.addLog("Refresh Schedule complete: 0 updated records added.");
-                DashboardService.showStatus(refreshTitle, "success", "0 updated records added.", provider);
+                DashboardService.addLog("Refresh Schedule complete: No new Records Found .");
+                DashboardService.showStatus(refreshTitle, "success", "No new Records Found .", provider);
             } else {
                 const refreshDetail = `${updatedCount} updated record${updatedCount === 1 ? "" : "s"} added.`;
                 DashboardService.addLog(`Refresh Schedule complete: ${refreshDetail}`);

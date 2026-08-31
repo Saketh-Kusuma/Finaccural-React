@@ -38,7 +38,7 @@ class QuickbooksController {
      */
     connectQuickbooks = asyncHandler(async (req, res, next) => {
         const { QuickBooksToken } = require('../../core/database');
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         const { Op } = require('sequelize');
         const tier = (req.query.tier || 'pro').toLowerCase();
 
@@ -60,7 +60,7 @@ class QuickbooksController {
             // stale task pane or a hand-edited URL. Refuse rather than
             // quietly degrading into a normal "add company" flow, since
             // that degradation is precisely the bypass this guards.
-            const reconnectTarget = await QuickBooksToken.findOne({ where: { realm_id: reconnectId, mail } });
+            const reconnectTarget = await QuickBooksToken.findOne({ where: { realm_id: reconnectId, user_id: userId } });
             if (!reconnectTarget) {
                 return res.send(renderOAuthBlockedPage({
                     title: 'Company Not Found',
@@ -75,7 +75,7 @@ class QuickbooksController {
             // limit here. A reconnect re-authorizes a company that already
             // occupies one of the plan's slots, so counting it would block
             // the user from restoring a company they are entitled to.
-            const whereClause = { status: { [Op.ne]: 'Disconnected' }, mail };
+            const whereClause = { status: { [Op.ne]: 'Disconnected' }, user_id: userId };
             const qbCount = await QuickBooksToken.count({ where: whereClause });
 
             if (qbCount >= maxAllowed) {
@@ -91,7 +91,7 @@ class QuickbooksController {
 
         const state = generateOAuthState();
         req.session.oauth_state = state;
-        req.session.user_mail = mail;
+        req.session.user_id = userId;
         // Carried into the callback so the limit is re-checked against the
         // tier the flow actually started with, rather than a ?tier= the
         // client could swap mid-flight.
@@ -118,7 +118,7 @@ class QuickbooksController {
     quickbooksCallback = async (req, res, next) => {
         try {
             const { code, realmId } = req.query;
-            const mail = req.session?.user_mail || req.session?.admin?.email || req.session?.googleUser?.email || null;
+            const userId = req.session?.user_id || req.session?.admin?.id || null;
 
             // Both values come from the session, written by /connect — the
             // tier so a client cannot widen its own limit halfway through
@@ -153,11 +153,11 @@ class QuickbooksController {
             // what makes the limit a lifetime allowance rather than a
             // concurrent one. Without it, disconnect -> connect a different
             // company is an unlimited carousel on a 1-company plan.
-            if (!reconnectId && mail) {
+            if (!reconnectId && userId) {
                 const { QuickBooksToken } = require('../../core/database');
                 const { Op } = require('sequelize');
                 const otherCount = await QuickBooksToken.count({
-                    where: { mail, realm_id: { [Op.ne]: realmId } }
+                    where: { user_id: userId, realm_id: { [Op.ne]: realmId } }
                 });
 
                 if (otherCount + 1 > maxAllowed) {
@@ -173,7 +173,7 @@ class QuickbooksController {
             }
 
             const sessionInfo = JSON.stringify(req.session || {});
-            await QuickBooksService.exchangeAndSaveToken(code, realmId, sessionInfo, mail);
+            await QuickBooksService.exchangeAndSaveToken(code, realmId, sessionInfo, userId);
             delete req.session.qb_reconnect_id;
             return res.send(CONSTANTS.QUICKBOOKS.SUCCESS_HTML);
         } catch (error) {
@@ -187,7 +187,7 @@ class QuickbooksController {
      * Returns the authenticated user's own stored QuickBooks OAuth tokens.
      */
     listQuickbooksTokens = asyncHandler(async (req, res, next) => {
-        const tokens = await QuickBooksTokenRepository.getAllTokens(req.user.email);
+        const tokens = await QuickBooksTokenRepository.getAllTokens(req.user.userId || req.user.id);
         res.json({ tokens });
     });
 
@@ -196,7 +196,7 @@ class QuickbooksController {
      * Returns a list of mapped CustomerDTOs for the authenticated user's companies.
      */
     getCustomers = asyncHandler(async (req, res, next) => {
-        const customers = await QuickBooksService.getCustomers(req.user.email);
+        const customers = await QuickBooksService.getCustomers(req.user.userId || req.user.id);
         res.json({ customers });
     });
 
@@ -205,7 +205,7 @@ class QuickbooksController {
      * Returns a list of mapped VendorDTOs for the authenticated user's companies.
      */
     getVendors = asyncHandler(async (req, res, next) => {
-        const vendors = await QuickBooksService.getVendors(req.user.email);
+        const vendors = await QuickBooksService.getVendors(req.user.userId || req.user.id);
         res.json({ vendors });
     });
 
@@ -214,7 +214,7 @@ class QuickbooksController {
      * Returns a list of mapped AccountDTOs for the authenticated user's companies.
      */
     getAccounts = asyncHandler(async (req, res, next) => {
-        const accounts = await QuickBooksService.getAccounts(req.user.email);
+        const accounts = await QuickBooksService.getAccounts(req.user.userId || req.user.id);
         res.json({ accounts });
     });
 
@@ -223,7 +223,7 @@ class QuickbooksController {
      * Returns a list of mapped ClassDTOs for the authenticated user's companies.
      */
     getClasses = asyncHandler(async (req, res, next) => {
-        const classes = await QuickBooksService.getClasses(req.user.email);
+        const classes = await QuickBooksService.getClasses(req.user.userId || req.user.id);
         res.json({ classes });
     });
 
@@ -232,7 +232,7 @@ class QuickbooksController {
      * Returns a list of mapped LocationDTOs for the authenticated user's companies.
      */
     getLocations = asyncHandler(async (req, res, next) => {
-        const locations = await QuickBooksService.getLocations(req.user.email);
+        const locations = await QuickBooksService.getLocations(req.user.userId || req.user.id);
         res.json({ locations });
     });
 
@@ -241,7 +241,7 @@ class QuickbooksController {
      * Returns company information DTO for the authenticated user's companies.
      */
     getCompanyInfo = asyncHandler(async (req, res, next) => {
-        const company = await QuickBooksService.getCompanyInfo(undefined, req.user.email);
+        const company = await QuickBooksService.getCompanyInfo(undefined, req.user.userId || req.user.id);
         res.json({ company });
     });
 
@@ -262,11 +262,11 @@ class QuickbooksController {
      * fetches don't each need their own CompanyInfo round trip.
      */
     exportMasterData = asyncHandler(async (req, res, next) => {
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         const BATCH_SIZE = 1000;
 
         const { tokens: allTokens, company, orgNameByTokenId } =
-            await QuickBooksService.getCompanyInfoAndOrgNames(mail)
+            await QuickBooksService.getCompanyInfoAndOrgNames(userId)
                 .catch(() => ({ tokens: [], company: null, orgNameByTokenId: new Map() }));
 
         // Per-entity list of tokens still known to have more pages —
@@ -407,7 +407,8 @@ class QuickbooksController {
      * Clears the authenticated user's own stored QuickBooks tokens only.
      */
     disconnectQuickbooks = asyncHandler(async (req, res, next) => {
-        await QuickBooksTokenRepository.clearTokens(req.user.email);
+        const userId = req.user.userId || req.user.id;
+        await QuickBooksTokenRepository.clearTokens(userId);
         res.json({ success: true, message: 'QuickBooks tokens cleared successfully.' });
     });
 
@@ -415,8 +416,8 @@ class QuickbooksController {
      * GET /api/quickbooks/connections
      */
     listConnections = asyncHandler(async (req, res, next) => {
-        const mail = req.user.email;
-        const list = await QuickBooksService.listConnections(mail);
+        const userId = req.user.userId || req.user.id;
+        const list = await QuickBooksService.listConnections(userId);
         return res.json(list);
     });
 
@@ -424,7 +425,7 @@ class QuickbooksController {
      * GET /api/quickbooks/connections/stats
      */
     getConnectionStats = asyncHandler(async (req, res, next) => {
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         const plan = req.query.plan || 'pro';
 
         const stats = {
@@ -437,7 +438,7 @@ class QuickbooksController {
         else if (plan === 'basic')    stats.maxPerPlatform = 1;
         else if (plan === 'standard') stats.maxPerPlatform = 3;
 
-        const qbStats = await QuickBooksService.getConnectionStats(mail, plan);
+        const qbStats = await QuickBooksService.getConnectionStats(userId, plan);
         stats.quickbooks = {
             connected: qbStats.connected,
             remaining: qbStats.remaining
@@ -451,7 +452,8 @@ class QuickbooksController {
      */
     disconnectConnection = asyncHandler(async (req, res, next) => {
         const companyId = req.params.id;
-        const success = await QuickBooksService.disconnectConnection(companyId, req.user.email);
+        const userId = req.user.userId || req.user.id;
+        const success = await QuickBooksService.disconnectConnection(companyId, userId);
         return res.json({ success: !!success });
     });
 
@@ -460,7 +462,8 @@ class QuickbooksController {
      */
     activateConnection = asyncHandler(async (req, res, next) => {
         const companyId = req.params.id;
-        const success = await QuickBooksService.activateConnection(companyId, req.user.email);
+        const userId = req.user.userId || req.user.id;
+        const success = await QuickBooksService.activateConnection(companyId, userId);
 
         let totalRecords = 0;
         if (success) {
@@ -479,12 +482,13 @@ class QuickbooksController {
      */
     renameConnection = asyncHandler(async (req, res, next) => {
         const companyId = req.params.id;
+        const userId = req.user.userId || req.user.id;
         const { companyName } = req.body;
         if (!companyName) {
             throw new ValidationError('companyName is required.');
         }
 
-        const success = await QuickBooksService.renameConnection(companyId, req.user.email, companyName);
+        const success = await QuickBooksService.renameConnection(companyId, userId, companyName);
         return res.json({ success: !!success });
     });
 
@@ -522,6 +526,7 @@ class QuickbooksController {
     pullMasterData = asyncHandler(async (req, res, next) => {
         const { companyId, tier, mode, stream } = req.query;
         const isIncremental = mode === 'incremental';
+        const userId = req.user.userId || req.user.id;
 
         if (stream === 'true' || req.headers.accept?.includes('text/event-stream')) {
             res.setHeader('Content-Type', 'text/event-stream');
@@ -539,7 +544,7 @@ class QuickbooksController {
                     res.write(`data: ${JSON.stringify(event)}\n\n`);
                 };
 
-                const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, req.user.email, onProgress, isIncremental);
+                const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, onProgress, isIncremental);
                 clearInterval(heartbeatInterval);
 
                 res.write(`data: ${JSON.stringify({ type: 'complete', data: aggregated })}\n\n`);
@@ -551,7 +556,7 @@ class QuickbooksController {
             }
         }
 
-        const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, req.user.email, null, isIncremental);
+        const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, null, isIncremental);
 
         if (!aggregated) {
             const { AppError } = require('../../core/errors/AppError');
@@ -578,7 +583,8 @@ class QuickbooksController {
      */
     refreshIncremental = asyncHandler(async (req, res, next) => {
         const { companyId, tier } = req.query;
-        const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, req.user.email, null, true);
+        const userId = req.user.userId || req.user.id;
+        const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, null, true);
 
         if (!aggregated) {
             const { AppError } = require('../../core/errors/AppError');

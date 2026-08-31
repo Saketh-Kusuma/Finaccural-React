@@ -103,8 +103,9 @@ class ExcelValidationController {
         try {
             const buffer = this.decodeFile(req);
             const { sheet, platform } = req.body;
-            const mail = req.user.email; // never trust a client-suppliable mail — same rule as every other module
-            const { diff, keyField } = await ExcelValidationService.compareWithApi(buffer, sheet, platform, mail);
+            const mail = req.user.email;
+            const userId = req.user.userId || req.user.id;
+            const { diff, keyField } = await ExcelValidationService.compareWithApi(buffer, sheet, platform, mail, userId);
             res.json({ sheet, platform, keyField, ...diff });
         } catch (err) {
             next(err);
@@ -119,7 +120,8 @@ class ExcelValidationController {
         try {
             const buffer = this.decodeFile(req);
             const mail = req.user.email;
-            const { diff, keyField } = await ExcelValidationService.compareWithDatabase(buffer, mail);
+            const userId = req.user.userId || req.user.id;
+            const { diff, keyField } = await ExcelValidationService.compareWithDatabase(buffer, mail, userId);
             res.json({ sheet: 'Connections', keyField, ...diff });
         } catch (err) {
             next(err);

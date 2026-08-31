@@ -112,19 +112,19 @@ const { authenticate } = require('../modules/auth/auth.middleware');
 // passing their email.
 router.get('/connections', authenticate, async (req, res, next) => {
     try {
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
  
         const list = [];
        
         if (quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            const qbList = await QuickBooksService.listConnections(mail);
+            const qbList = await QuickBooksService.listConnections(userId);
             list.push(...qbList);
         }
  
         if (xeroRoutes) {
             const XeroService = require('../modules/xero/service');
-            const xeroList = await XeroService.listConnections(mail);
+            const xeroList = await XeroService.listConnections(userId);
             list.push(...xeroList);
         }
  
@@ -137,7 +137,7 @@ router.get('/connections', authenticate, async (req, res, next) => {
 // GET /api/connections/stats
 router.get('/connections/stats', authenticate, validate(schemas.connectionStatsQuery, 'query'), async (req, res, next) => {
     try {
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         const plan = req.query.plan || 'pro';
  
         const stats = {
@@ -152,7 +152,7 @@ router.get('/connections/stats', authenticate, validate(schemas.connectionStatsQ
  
         if (quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            const qbStats = await QuickBooksService.getConnectionStats(mail, plan);
+            const qbStats = await QuickBooksService.getConnectionStats(userId, plan);
             stats.quickbooks = {
                 connected: qbStats.connected,
                 remaining: qbStats.remaining
@@ -161,7 +161,7 @@ router.get('/connections/stats', authenticate, validate(schemas.connectionStatsQ
  
         if (xeroRoutes) {
             const XeroService = require('../modules/xero/service');
-            const xeroStats = await XeroService.getConnectionStats(mail, plan);
+            const xeroStats = await XeroService.getConnectionStats(userId, plan);
             stats.xero = {
                 connected: xeroStats.connected,
                 remaining: xeroStats.remaining
@@ -182,18 +182,18 @@ router.get('/connections/stats', authenticate, validate(schemas.connectionStatsQ
 router.delete('/connections/:id', authenticate, async (req, res, next) => {
     try {
         const companyId = req.params.id;
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         let success = false;
  
         if (quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            const qbSuccess = await QuickBooksService.disconnectConnection(companyId, mail);
+            const qbSuccess = await QuickBooksService.disconnectConnection(companyId, userId);
             if (qbSuccess) success = true;
         }
  
         if (!success && xeroRoutes) {
             const XeroService = require('../modules/xero/service');
-            const xeroSuccess = await XeroService.disconnectConnection(companyId, mail);
+            const xeroSuccess = await XeroService.disconnectConnection(companyId, userId);
             if (xeroSuccess) success = true;
         }
  
@@ -208,13 +208,13 @@ router.delete('/connections/:id', authenticate, async (req, res, next) => {
 router.post('/connections/:id/activate', authenticate, async (req, res, next) => {
     try {
         const companyId = req.params.id;
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         let success = false;
         let totalRecords = 0;
  
         if (quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            const qbSuccess = await QuickBooksService.activateConnection(companyId, mail);
+            const qbSuccess = await QuickBooksService.activateConnection(companyId, userId);
             if (qbSuccess) {
                 success = true;
                 try {
@@ -226,7 +226,7 @@ router.post('/connections/:id/activate', authenticate, async (req, res, next) =>
  
         if (!success && xeroRoutes) {
             const XeroService = require('../modules/xero/service');
-            const xeroSuccess = await XeroService.activateConnection(companyId, mail);
+            const xeroSuccess = await XeroService.activateConnection(companyId, userId);
             if (xeroSuccess) success = true;
         }
  
@@ -241,20 +241,20 @@ router.post('/connections/:id/activate', authenticate, async (req, res, next) =>
 router.patch('/connections/:id/rename', authenticate, validate(schemas.renameConnection), async (req, res, next) => {
     try {
         const companyId = req.params.id;
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         const { companyName } = req.body;
  
         let success = false;
  
         if (quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            const qbSuccess = await QuickBooksService.renameConnection(companyId, mail, companyName);
+            const qbSuccess = await QuickBooksService.renameConnection(companyId, userId, companyName);
             if (qbSuccess) success = true;
         }
  
         if (!success && xeroRoutes) {
             const XeroService = require('../modules/xero/service');
-            const xeroSuccess = await XeroService.renameConnection(companyId, mail, companyName);
+            const xeroSuccess = await XeroService.renameConnection(companyId, userId, companyName);
             if (xeroSuccess) success = true;
         }
  
@@ -277,7 +277,8 @@ router.patch('/connections/:id/rename', authenticate, validate(schemas.renameCon
 // of advancing. Omitting it (or sending {}) starts a fresh cycle.
 router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQuery, 'query'), async (req, res, next) => {
     try {
-        const { companyId, platform, tier, cursor } = req.query;
+        const { companyId, platform, tier, cursor, mode } = req.query;
+        const isIncremental = mode === 'incremental';
 
         let cursorByCompany = {};
         if (cursor) {
@@ -292,7 +293,7 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
             }
         }
  
-        const mail = req.user.email;
+        const userId = req.user.userId || req.user.id;
         const normPlatform = platform.toLowerCase();
         let aggregated = null;
         let tokenRefreshed = false;
@@ -336,10 +337,10 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
             try {
                 if (normPlatform === 'quickbooks' && quickbooksRoutes) {
                     const QuickBooksService = require('../modules/quickbooks/service');
-                    aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, mail, onProgress);
+                    aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, onProgress, isIncremental);
                 } else if (normPlatform === 'xero' && xeroRoutes) {
                     const XeroService = require('../modules/xero/service');
-                    aggregated = await XeroService.pullMasterData(companyId, tier, mail);
+                    aggregated = await XeroService.pullMasterData(companyId, tier, userId, isIncremental);
                 }
                 clearInterval(heartbeatInterval);
                 res.write(`data: ${JSON.stringify({ type: 'complete', data: aggregated })}\n\n`);
@@ -353,10 +354,10 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
 
         if (normPlatform === 'quickbooks' && quickbooksRoutes) {
             const QuickBooksService = require('../modules/quickbooks/service');
-            aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, mail);
+            aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, null, isIncremental);
         } else if (normPlatform === 'xero' && xeroRoutes) {
             const XeroService = require('../modules/xero/service');
-            aggregated = await XeroService.pullMasterData(companyId, tier, mail);
+            aggregated = await XeroService.pullMasterData(companyId, tier, userId, isIncremental);
         }
  
         if (!aggregated) {

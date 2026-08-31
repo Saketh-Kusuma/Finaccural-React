@@ -288,8 +288,30 @@ const AuthService = {
 
     _tokenRefreshInterval: null,
 
+    /**
+     * Check if the access JWT will expire within the buffer window (default 5 minutes).
+     * @param {string} token - JWT Access Token
+     * @param {number} bufferMs - Buffer time in ms (default 5 minutes = 300,000 ms)
+     * @returns {boolean}
+     */
+    isTokenExpiringSoon(token, bufferMs = 5 * 60 * 1000) {
+        if (!token) return true;
+        try {
+            const payloadBase64 = token.split(".")[1];
+            const decoded = JSON.parse(atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/")));
+            if (decoded && decoded.exp) {
+                const expMs = decoded.exp * 1000;
+                return (expMs - Date.now()) <= bufferMs;
+            }
+        } catch (_) { }
+        return true;
+    },
+
     async ensureValidToken() {
         if (!AppState.refreshToken) return AppState.jwtToken;
+        if (!this.isTokenExpiringSoon(AppState.jwtToken, 5 * 60 * 1000)) {
+            return AppState.jwtToken;
+        }
         try {
             const refreshRes = await fetch(`${ApiService.BASE}/api/auth/refresh`, {
                 method: "POST",
@@ -314,13 +336,15 @@ const AuthService = {
         if (this._tokenRefreshInterval) {
             clearInterval(this._tokenRefreshInterval);
         }
-        // Since access token expires in 1 hour (3,600,000 ms),
-        // we proactively refresh it every 30 minutes (1,800,000 ms).
+        // Checks every 30 seconds if the access token is within 5 minutes of expiration.
+        // If remaining time <= 5 minutes, it automatically rotates tokens.
         this._tokenRefreshInterval = setInterval(async () => {
             if (AppState.jwtToken && AppState.refreshToken && !AppState.sessionExpired) {
-                await this.ensureValidToken();
+                if (this.isTokenExpiringSoon(AppState.jwtToken, 5 * 60 * 1000)) {
+                    await this.ensureValidToken();
+                }
             }
-        }, 30 * 60 * 1000);
+        }, 30 * 1000);
     },
 
     _persistSubscription() {
@@ -348,6 +372,18 @@ const AuthService = {
         if (lastName) localStorage.setItem("fa_last_user_name", lastName);
         if (lastProvider) localStorage.setItem("fa_last_user_provider", lastProvider);
 
+        const currentJwt = AppState.jwtToken;
+        const currentRefreshToken = AppState.refreshToken;
+
+        try {
+            if (currentRefreshToken || currentJwt) {
+                ApiService.apiFetch("/api/auth/logout", {
+                    method: "POST",
+                    body: JSON.stringify({ refreshToken: currentRefreshToken, token: currentJwt })
+                }).catch(() => { });
+            }
+        } catch (_) { }
+
         AppState.userEmail = null;
         AppState.userName = null;
         AppState.userProvider = null;
@@ -371,12 +407,6 @@ const AuthService = {
         const notifDrawerEl = document.getElementById("notifDrawer");
         if (notifDrawerEl) notifDrawerEl.style.display = "none";
 
-        // Note: AppState.sessionExpired is deliberately NOT reset here —
-        // it's only cleared once a fresh token is obtained via a
-        // successful login (see checkSubscription / handleGoogleAuth /
-        // handleReturningUser), so a burst of already-in-flight requests
-        // failing right after logout can't re-trigger the redirect loop.
-
         hideBanner();
 
         [
@@ -386,10 +416,6 @@ const AuthService = {
             "fa_current_company_id",
             "fa_last_view", "fa_jwt_token", "fa_refresh_token"
         ].forEach(k => localStorage.removeItem(k));
-
-        try {
-            ApiService.apiFetch("/api/auth/logout", { method: "POST" }).catch(() => { });
-        } catch (_) { }
 
         ViewRouter.show("Welcome");
     }

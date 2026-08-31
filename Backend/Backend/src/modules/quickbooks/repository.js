@@ -1,36 +1,36 @@
 const { QuickBooksToken, XeroToken } = require('../../core/database');
 
 /**
- * Every read/write here is scoped to the owning user's email wherever one
+ * Every read/write here is scoped to the owning user's FIN ID (userId) wherever one
  * is supplied. ERP connections must never leak across accounts — a
- * connection belongs exclusively to the email that created it, so callers
+ * connection belongs exclusively to the user ID that created it, so callers
  * (the service/controller layers) are expected to always pass the
- * authenticated user's `mail` through to these methods.
+ * authenticated user's `userId` through to these methods.
  */
 class QuickBooksTokenRepository {
-    static async getLatestToken(mail) {
+    static async getLatestToken(userId) {
         return await QuickBooksToken.findOne({
-            where: mail ? { mail } : {},
+            where: userId ? { user_id: userId } : {},
             order: [['updated_at', 'DESC']]
         });
     }
 
     /**
-     * @param {string} [mail] - Scopes to this user's connections only. Pass
+     * @param {string} [userId] - Scopes to this user's connections only. Pass
      *   nothing only for genuinely account-agnostic internal use — every
      *   user-facing caller must supply it.
      */
-    static async getActiveTokens(mail) {
+    static async getActiveTokens(userId) {
         return await QuickBooksToken.findAll({
-            where: { status: 'Active', ...(mail ? { mail } : {}) },
+            where: { status: 'Active', ...(userId ? { user_id: userId } : {}) },
             order: [['updated_at', 'DESC']]
         });
     }
 
-    /** @param {string} [mail] - Scopes to this user's connections only. */
-    static async getAllTokens(mail) {
+    /** @param {string} [userId] - Scopes to this user's connections only. */
+    static async getAllTokens(userId) {
         return await QuickBooksToken.findAll({
-            where: mail ? { mail } : {},
+            where: userId ? { user_id: userId } : {},
             order: [['created_at', 'DESC']]
         });
     }
@@ -41,10 +41,10 @@ class QuickBooksTokenRepository {
 
     /**
      * Disconnects every one of the given user's QuickBooks connections and
-     * wipes their credentials. `mail` is required — without it this used to
+     * wipes their credentials. `userId` is required — without it this used to
      * `truncate` the entire table (every user's connections), which is
      * exactly the cross-account data loss this scoping exists to prevent,
-     * so a missing `mail` is now a no-op rather than a footgun.
+     * so a missing `userId` is now a no-op rather than a footgun.
      *
      * The rows are deliberately kept rather than destroyed. Plan limits are
      * counted per company ever connected (see quickbooksCallback), so
@@ -53,10 +53,10 @@ class QuickBooksTokenRepository {
      * closes. Keeping them also preserves the "Reconnect" affordance for
      * each company in the task pane, matching per-connection disconnect
      * (QuickBooksService.disconnectConnection).
-     * @param {string} mail
+     * @param {string} userId
      */
-    static async clearTokens(mail) {
-        if (!mail) return 0;
+    static async clearTokens(userId) {
+        if (!userId) return 0;
         const [updated] = await QuickBooksToken.update({
             status: 'Disconnected',
             access_token: '',
@@ -64,25 +64,25 @@ class QuickBooksTokenRepository {
             expires_in: 0,
             x_refresh_token_expires_in: 0,
             session_info: null
-        }, { where: { mail } });
+        }, { where: { user_id: userId } });
         return updated;
     }
 
     /**
      * Disconnects every one of the given user's Xero connections. Same
-     * `mail`-required safety rule, and the same keep-the-row reasoning, as
+     * `userId`-required safety rule, and the same keep-the-row reasoning, as
      * clearTokens() above.
-     * @param {string} mail
+     * @param {string} userId
      */
-    static async clearXeroTokens(mail) {
-        if (!mail) return 0;
+    static async clearXeroTokens(userId) {
+        if (!userId) return 0;
         const [updated] = await XeroToken.update({
             status: 'Disconnected',
             access_token: '',
             refresh_token: '',
             expires_in: 0,
             session_info: null
-        }, { where: { mail } });
+        }, { where: { user_id: userId } });
         return updated;
     }
 }

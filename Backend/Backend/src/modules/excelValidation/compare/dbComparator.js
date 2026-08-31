@@ -28,21 +28,21 @@ const CONNECTIONS_SCHEMA = getSchema('Connections');
 /**
  * Fetch this user's QuickBooksToken + XeroToken rows, normalized to the
  * Connections schema's field keys.
- * @param {string} mail - authenticated user's email
+ * @param {string} userId - authenticated user's FIN ID
  * @returns {Promise<Array<{id:string, companyName:string, email:string, status:string, platform:string}>>}
  */
-async function fetchConnectionRows(mail) {
+async function fetchConnectionRows(userId) {
     const { QuickBooksToken, XeroToken } = require('../../../core/database');
 
     const [qbRows, xeroRows] = await Promise.all([
-        QuickBooksToken.findAll({ where: { mail }, raw: true }).catch(() => []),
-        XeroToken.findAll({ where: { mail }, raw: true }).catch(() => [])
+        QuickBooksToken.findAll({ where: { user_id: userId }, raw: true }).catch(() => []),
+        XeroToken.findAll({ where: { user_id: userId }, raw: true }).catch(() => [])
     ]);
 
     const normalize = (row, idField, platform) => ({
         id:          row[idField] || '',
         companyName: row.company_name || '',
-        email:       row.mail || '',
+        email:       row.mail || row.user_id || '',
         status:      row.status || '',
         platform
     });
@@ -74,12 +74,13 @@ function normalizeExcelRows(rows) {
 /**
  * @param {object} opts
  * @param {{headers:string[], rows:Array}} opts.parsedSheet - ExcelParser output for the "Connections" sheet
- * @param {string} opts.mail - authenticated user's email
+ * @param {string} [opts.mail] - authenticated user's email
+ * @param {string} [opts.userId] - authenticated user's FIN ID
  * @returns {Promise<{ keyField:string, diff:ReturnType<typeof diffRecordSets> }>}
  */
-async function compareConnectionsWithDatabase({ parsedSheet, mail }) {
+async function compareConnectionsWithDatabase({ parsedSheet, mail, userId }) {
     const excelRows = normalizeExcelRows(parsedSheet.rows);
-    const dbRows = await fetchConnectionRows(mail);
+    const dbRows = await fetchConnectionRows(userId || mail);
 
     const fields = CONNECTIONS_SCHEMA.columns.map((c) => c.key).filter((k) => k !== 'id');
     const diff = diffRecordSets({ left: excelRows, right: dbRows, keyField: 'id', fields });

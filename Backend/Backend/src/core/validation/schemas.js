@@ -39,26 +39,39 @@ const renameConnection = Joi.object({
     companyName: Joi.string().trim().min(1).max(255).required()
 });
 
-// GET /api/pull-master-data?companyId=...&platform=...&tier=...&cursor=...
+// GET /api/pull-master-data?companyId=...&platform=...&tier=...&cursor=...&mode=...&stream=...
 // `cursor` is the JSON-encoded pagination cursor echoed back from a
 // previous response. Declared here (rather than left undeclared) so
 // stripUnknown can't quietly drop it — the pull would then restart at
 // the first entity's first record on every click.
+// `mode=incremental` triggers delta-only fetching (MetaData.LastUpdatedTime
+// filter for QB; If-Modified-Since header for Xero) instead of a full pull.
+// `stream=true` upgrades the response to Server-Sent Events so the
+// frontend can display live progress.
 const pullMasterDataQuery = Joi.object({
     companyId: Joi.string().trim().max(255).allow('', null),
     platform:  Joi.string().trim().lowercase().valid('quickbooks', 'xero').required(),
     tier:      Joi.string().trim().lowercase().valid('trial', 'basic', 'standard', 'pro').default('pro'),
-    cursor:    Joi.string().max(20000).allow('', null)
+    cursor:    Joi.string().max(20000).allow('', null),
+    mode:      Joi.string().trim().lowercase().valid('incremental', 'full').default('full'),
+    stream:    Joi.string().trim().valid('true', 'false').default('false')
 });
 
 // GET /api/quickbooks/pull-master-data?companyId=...&tier=...
 // GET /api/xero/pull-master-data?companyId=...&tier=...
+// GET /api/quickbooks/refresh-incremental?companyId=...&tier=...
+// GET /api/xero/refresh-incremental?companyId=...&tier=...
 // (module-scoped variant — no `platform` param, since the module is
 // already implied by which router this is mounted under)
+// `mode=incremental` accepted for parity with the shared route but is
+// ignored here since the module controller always uses the explicit
+// incremental flag.
 const moduleMasterDataQuery = Joi.object({
     companyId: Joi.string().trim().max(255).allow('', null),
     tier:      Joi.string().trim().lowercase().valid('trial', 'basic', 'standard', 'pro').default('pro'),
-    cursor:    Joi.string().max(20000).allow('', null)
+    cursor:    Joi.string().max(20000).allow('', null),
+    mode:      Joi.string().trim().lowercase().valid('incremental', 'full').default('full'),
+    stream:    Joi.string().trim().valid('true', 'false').default('false')
 });
 
 // GET /api/connections/stats?plan=...

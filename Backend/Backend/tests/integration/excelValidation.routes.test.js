@@ -7,7 +7,7 @@ const request = require('supertest');
 // controller method scopes its API/DB lookups by.
 jest.mock('../../src/modules/auth/auth.middleware', () => ({
     authenticate: (req, res, next) => {
-        req.user = { userId: 1, email: 'user@example.com', role: 'user', name: 'Test User' };
+        req.user = { userId: 'FIN202612345', id: 'FIN202612345', email: 'user@example.com', role: 'user', name: 'Test User' };
         next();
     }
 }));
@@ -127,7 +127,7 @@ describe('Excel Validation Routes Integration', () => {
 
             expect(res.status).toBe(200);
             expect(ExcelValidationService.compareWithApi).toHaveBeenCalledWith(
-                expect.any(Buffer), 'Customers', 'quickbooks', 'user@example.com'
+                expect.any(Buffer), 'Customers', 'quickbooks', 'user@example.com', 'FIN202612345'
             );
         });
     });

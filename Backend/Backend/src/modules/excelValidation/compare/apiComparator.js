@@ -27,29 +27,32 @@ const { ValidationError } = require('../../../core/errors/AppError');
  * same flat shape the Excel schema's column `key`s expect.
  * @param {string} sheetName - one of API_COMPARABLE_SHEETS
  * @param {'quickbooks'|'xero'} platform
- * @param {string} mail - authenticated user's email (never client-suppliable)
+ * @param {string} [mail] - authenticated user's email
+ * @param {string} [userId] - authenticated user's FIN ID
  * @returns {Promise<Array<object>>}
  */
-async function fetchLiveRows(sheetName, platform, mail) {
+async function fetchLiveRows(sheetName, platform, mail, userId) {
     if (!API_COMPARABLE_SHEETS.includes(sheetName)) {
         throw new ValidationError(`"${sheetName}" cannot be compared against a live API — it has no API source.`);
     }
+
+    const targetUserId = userId || mail;
 
     if (platform === 'quickbooks') {
         const QuickBooksService = require('../../quickbooks/service');
         switch (sheetName) {
             case 'Company': {
-                const company = await QuickBooksService.getCompanyInfo(undefined, mail).catch(() => null);
+                const company = await QuickBooksService.getCompanyInfo(undefined, targetUserId).catch(() => null);
                 return company ? [company] : [];
             }
-            case 'Customers': return QuickBooksService.getCustomers(mail);
-            case 'Vendors':   return QuickBooksService.getVendors(mail);
+            case 'Customers': return QuickBooksService.getCustomers(targetUserId);
+            case 'Vendors':   return QuickBooksService.getVendors(targetUserId);
             case 'Accounts': {
-                const accounts = await QuickBooksService.getAccounts(mail);
+                const accounts = await QuickBooksService.getAccounts(targetUserId);
                 return accounts.map((a) => ({ ...a, balance: a.currentBalance }));
             }
-            case 'Classes':   return QuickBooksService.getClasses(mail);
-            case 'Locations': return QuickBooksService.getLocations(mail);
+            case 'Classes':   return QuickBooksService.getClasses(targetUserId);
+            case 'Locations': return QuickBooksService.getLocations(targetUserId);
             default: return [];
         }
     }
@@ -58,20 +61,20 @@ async function fetchLiveRows(sheetName, platform, mail) {
         const XeroService = require('../../xero/service');
         switch (sheetName) {
             case 'Company': {
-                const org = await XeroService.getOrganisation(mail).catch(() => null);
+                const org = await XeroService.getOrganisation(targetUserId).catch(() => null);
                 return org ? [org] : [];
             }
             case 'Customers': {
-                const contacts = await XeroService.getContacts(mail);
+                const contacts = await XeroService.getContacts(targetUserId);
                 return contacts.filter((c) => c.isCustomer);
             }
             case 'Vendors': {
-                const contacts = await XeroService.getContacts(mail);
+                const contacts = await XeroService.getContacts(targetUserId);
                 return contacts.filter((c) => c.isSupplier);
             }
-            case 'Accounts':  return XeroService.getAccounts(mail);
-            case 'Classes':   return XeroService.getClasses(mail);
-            case 'Locations': return XeroService.getLocations(mail);
+            case 'Accounts':  return XeroService.getAccounts(targetUserId);
+            case 'Classes':   return XeroService.getClasses(targetUserId);
+            case 'Locations': return XeroService.getLocations(targetUserId);
             default: return [];
         }
     }
@@ -101,13 +104,14 @@ function normalizeExcelRows(rows, schema) {
  * @param {string} opts.sheetName
  * @param {{headers:string[], rows:Array}} opts.parsedSheet - ExcelParser output for this one sheet
  * @param {'quickbooks'|'xero'} opts.platform
- * @param {string} opts.mail
+ * @param {string} [opts.mail]
+ * @param {string} [opts.userId]
  * @returns {Promise<{ sheet:string, keyField:string, diff:ReturnType<typeof diffRecordSets> }>}
  */
-async function compareSheetWithApi({ sheetName, parsedSheet, platform, mail }) {
+async function compareSheetWithApi({ sheetName, parsedSheet, platform, mail, userId }) {
     const schema = getSchema(sheetName);
     const excelRows = normalizeExcelRows(parsedSheet.rows, schema);
-    const liveRows = await fetchLiveRows(sheetName, platform, mail);
+    const liveRows = await fetchLiveRows(sheetName, platform, mail, userId);
 
     const fields = schema.columns.map((c) => c.key).filter((k) => k !== 'id');
     const diff = diffRecordSets({ left: excelRows, right: liveRows, keyField: 'id', fields });

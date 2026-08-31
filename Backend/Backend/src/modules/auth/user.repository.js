@@ -50,7 +50,7 @@ class UserRepository {
 
     /**
      * Create a new user record.
-     * @param {{ name, email, password_hash?, provider, google_id?, microsoft_id?, role? }} data
+     * @param {{ name, email, provider, google_id?, microsoft_id?, role? }} data
      * @returns {Promise<User>}
      */
     static async create(data) {
