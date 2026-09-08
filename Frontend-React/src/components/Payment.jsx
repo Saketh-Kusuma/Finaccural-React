@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { API_BASE } from "../taskpane/api";
+import { API_BASE, apiFetch } from "../taskpane/api";
 import { Header } from "./ui";
 
 export function Payment({ user, order, onBack, onDone, notify }) {
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const currentOrder = order || { name: "Pro", price: 1999, cycle: "monthly" };
+
   const proceed = () => {
     setBusy(true);
     const params = new URLSearchParams({
@@ -22,6 +24,25 @@ export function Payment({ user, order, onBack, onDone, notify }) {
     if (!popup)
       notify("Checkout popup was blocked. Please allow popups and try again.");
     setBusy(false);
+  };
+
+  const checkPayment = async () => {
+    setVerifying(true);
+    try {
+      const res = await apiFetch("/api/auth/me");
+      const data = await res.json();
+      const serverPlan = data?.user?.plan || "";
+      if (serverPlan && serverPlan.toLowerCase() !== "trial" && serverPlan.toLowerCase() !== "free trial") {
+        notify("Payment verified!", "success", `Active subscription found: ${serverPlan}`);
+        onDone({ plan: serverPlan, subscriptionId: data?.user?.subscriptionId });
+      } else {
+        notify("No completed payment detected yet.", "error", "If you just completed checkout, please wait a few seconds and try again.");
+      }
+    } catch (err) {
+      notify("Verification check failed. Please check your connection and try again.", "error");
+    } finally {
+      setVerifying(false);
+    }
   };
   return (
     <section className="view active">
@@ -69,19 +90,20 @@ export function Payment({ user, order, onBack, onDone, notify }) {
             Already paid?{" "}
             <button
               className="link-button"
-              onClick={onDone}
+              disabled={verifying}
+              onClick={checkPayment}
               style={{
                 background: "none",
                 border: "none",
                 color: "#2459dd",
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: verifying ? "default" : "pointer",
                 textDecoration: "underline",
                 padding: 0,
                 font: "inherit",
               }}
             >
-              Verify my payment →
+              {verifying ? "Checking status…" : "Check payment status →"}
             </button>
           </p>
         </div>

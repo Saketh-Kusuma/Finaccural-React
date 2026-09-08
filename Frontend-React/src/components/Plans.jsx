@@ -26,7 +26,7 @@ const plans = [
     icon: "♛",
     tone: "pro",
     featured: true,
-    features: ["Unlimited companies", "Automated schedules", "Premium support"],
+    features: ["Up to 10 companies", "Automated schedules", "Premium support"],
   },
 ];
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ConnectedDashboard } from "./ConnectedDashboard";
 import { initials } from "./ui";
 import { AccountMenu } from "./AccountMenu";
+import { isTrustedOrigin } from "../taskpane/api";
 
 /* ---- Inline SVG icons ---- */
 function BellIcon() {
@@ -115,6 +116,7 @@ export function Dashboard({
 
   useEffect(() => {
     const receive = (event) => {
+      if (!isTrustedOrigin(event.origin)) return;
       const next =
         event.data === "xero_connected"
           ? "xero"

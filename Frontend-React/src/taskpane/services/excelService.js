@@ -24,8 +24,16 @@ const ExcelService = {
         }
         await Excel.run(async (context) => {
             const sheet = context.workbook.worksheets.getItem("1.Master_Data");
-            const clearRange = sheet.getRange("A2:AB10000");
-            clearRange.clear("All");
+            const usedRange = sheet.getUsedRangeOrNullObject();
+            usedRange.load(["rowCount", "isNullObject"]);
+            await context.sync();
+
+            if (!usedRange.isNullObject && usedRange.rowCount > 1) {
+                const clearRowCount = Math.max(usedRange.rowCount, 500);
+                sheet.getRange(`A2:AB${clearRowCount + 50}`).clear("All");
+            } else {
+                sheet.getRange("A2:AB100").clear("All");
+            }
 
             const orgGroupsMap = new Map();
             const fallbackOrgName = provider === "quickbooks" ? "QuickBooks Company" : "Xero Organisation";
@@ -180,7 +188,8 @@ const ExcelService = {
                 currentRow += maxRows + 2;
             }
 
-            const dataRange = sheet.getRange("A2:AB10000");
+            const formatEndRow = Math.max(currentRow, 50);
+            const dataRange = sheet.getRange(`A2:AB${formatEndRow}`);
             dataRange.format.font.size = 11;
             dataRange.format.wrapText = true;
             sheet.getRange("A:AB").format.columnWidth = 115;
@@ -258,20 +267,25 @@ const ExcelService = {
                 entities:  { first: "X", last: "AB" }
             };
 
+            const overallUsed = sheet.getUsedRangeOrNullObject();
+            overallUsed.load(["rowCount", "isNullObject"]);
+            await context.sync();
+            const scanLimit = (!overallUsed.isNullObject && overallUsed.rowCount > 1) ? Math.max(overallUsed.rowCount + 500, 2000) : 2000;
+
             const usedByBlock = {};
             for (const [key, { first, last }] of Object.entries(BLOCKS)) {
-                const used = sheet.getRange(`${first}2:${last}10000`).getUsedRangeOrNullObject();
+                const used = sheet.getRange(`${first}2:${last}${scanLimit}`).getUsedRangeOrNullObject();
                 used.load(["rowIndex", "rowCount", "isNullObject"]);
                 usedByBlock[key] = used;
             }
 
-            const existingOrgColumn = sheet.getRange("A2:A10000");
+            const existingOrgColumn = sheet.getRange(`A2:A${scanLimit}`);
             existingOrgColumn.load("values");
 
-            const existingAccountsIdRange = sheet.getRange("L2:L10000");
-            const existingClassesIdRange = sheet.getRange("P2:P10000");
-            const existingLocationsIdRange = sheet.getRange("U2:U10000");
-            const existingEntitiesIdRange = sheet.getRange("AA2:AA10000");
+            const existingAccountsIdRange = sheet.getRange(`L2:L${scanLimit}`);
+            const existingClassesIdRange = sheet.getRange(`P2:P${scanLimit}`);
+            const existingLocationsIdRange = sheet.getRange(`U2:U${scanLimit}`);
+            const existingEntitiesIdRange = sheet.getRange(`AA2:AA${scanLimit}`);
 
             existingAccountsIdRange.load("values");
             existingClassesIdRange.load("values");
@@ -406,9 +420,21 @@ const ExcelService = {
     async clearMasterDataRange() {
         if (typeof Excel === "undefined") return;
         await Excel.run(async (context) => {
-            const sheet = context.workbook.worksheets.getItem("1.Master_Data");
-            const clearRange = sheet.getRange("A2:AB10000");
-            clearRange.clear("All");
+            const sheet = context.workbook.worksheets.getItemOrNullObject("1.Master_Data");
+            sheet.load("isNullObject");
+            await context.sync();
+            if (sheet.isNullObject) return;
+
+            const used = sheet.getUsedRangeOrNullObject();
+            used.load(["rowCount", "isNullObject"]);
+            await context.sync();
+
+            if (!used.isNullObject && used.rowCount > 1) {
+                const clearRowCount = Math.max(used.rowCount, 500);
+                sheet.getRange(`A2:AB${clearRowCount + 50}`).clear("All");
+            } else {
+                sheet.getRange("A2:AB100").clear("All");
+            }
             await context.sync();
         });
     },

@@ -1,4 +1,28 @@
-export const API_BASE = "http://localhost:8000";
+export const API_BASE =
+  (typeof process !== "undefined" && process.env && process.env.API_BASE) ||
+  (typeof window !== "undefined" && window.__FINACCRUAL_CONFIG__ && window.__FINACCRUAL_CONFIG__.API_BASE) ||
+  "http://localhost:8000";
+
+export function getBackendOrigin() {
+  try {
+    return new URL(API_BASE, window.location.href).origin;
+  } catch (_) {
+    return "";
+  }
+}
+
+export function isTrustedOrigin(origin) {
+  if (!origin) return false;
+  if (typeof window !== "undefined" && origin === window.location.origin) return true;
+  const backendOrigin = getBackendOrigin();
+  if (backendOrigin && origin === backendOrigin) return true;
+  if (typeof process !== "undefined" && process.env && process.env.NODE_ENV !== "production") {
+    if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem("fa_jwt_token");
@@ -16,6 +40,7 @@ export function openAuth(provider, onProfile, loginHint) {
   const popup = window.open(url, `fa_${provider}_auth`, "width=520,height=640,resizable=yes,scrollbars=yes");
   if (!popup) throw new Error("The sign-in window was blocked. Please allow popups and try again.");
   const receive = (event) => {
+    if (!isTrustedOrigin(event.origin)) return;
     const data = event.data || {};
     const types = provider === "google" ? ["google_authed", "google_profile"] : ["microsoft_authed", "ms_authed", "microsoft_profile", "ms_profile"];
     if (!types.includes(data.type)) return;
@@ -78,6 +103,7 @@ function openTrialPopupFallback(url, onAction) {
     "width=640,height=560,resizable=yes,scrollbars=yes"
   );
   const receive = (event) => {
+    if (!isTrustedOrigin(event.origin)) return;
     let data = event.data;
     if (typeof data === "string") {
       try { data = JSON.parse(data); } catch (_) {}

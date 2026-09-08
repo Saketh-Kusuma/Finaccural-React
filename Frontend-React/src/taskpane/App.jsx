@@ -9,7 +9,7 @@ import { Loading, Success } from "../components/ui";
 import { ToastContainer } from "../components/ToastContainer";
 import { NotificationDrawer } from "../components/NotificationDrawer";
 import { NotificationService } from "./services/notificationService";
-import { apiFetch, openAuth, openErp, openTrialSelectDialog } from "./api";
+import { apiFetch, openAuth, openErp, openTrialSelectDialog, isTrustedOrigin } from "./api";
 import { saveAccount } from "./accountHistory";
 
 const initialUser = () => ({
@@ -205,39 +205,57 @@ export function App() {
   }, []);
 
   const handlePaymentSuccess = async (data = {}) => {
-    const selectedPlan = data?.plan || orderRef.current?.name || order?.name || "Pro";
-    const subId = data?.subscriptionId || orderRef.current?.subscriptionId || localStorage.getItem("fa_subscription_id") || ("FA-SUB-" + Math.floor(100000 + Math.random() * 900000));
+    let selectedPlan = data?.plan || orderRef.current?.name || order?.name || "Pro";
+    // Normalize casing for backend Joi validation (requires 'Basic', 'Standard', 'Pro')
+    if (/^basic$/i.test(selectedPlan)) selectedPlan = "Basic";
+    else if (/^standard$/i.test(selectedPlan)) selectedPlan = "Standard";
+    else if (/^pro$/i.test(selectedPlan)) selectedPlan = "Pro";
 
-    localStorage.setItem("fa_plan", selectedPlan);
-    localStorage.setItem("fa_subscription_plan", selectedPlan);
-    localStorage.setItem("fa_subscription_id", subId);
-
-    setUser((prev) => ({
-      ...prev,
-      plan: selectedPlan,
-      subscriptionId: subId
-    }));
-
-    // Sync with backend database
     const email = user.email || localStorage.getItem("fa_user_email");
-    const token = localStorage.getItem("fa_jwt_token");
     if (email) {
       try {
         await apiFetch("/api/payments/complete", {
           method: "POST",
-          body: JSON.stringify({ email, plan: selectedPlan, token })
+          body: JSON.stringify({ email, plan: selectedPlan })
         });
       } catch (err) {
         console.warn("Could not sync payment complete to backend:", err);
       }
     }
 
-    notify("Payment successful.", "success", `Subscribed to the ${selectedPlan} plan.`);
+    // Refresh official profile from backend
+    let subId = data?.subscriptionId || orderRef.current?.subscriptionId || "";
+    let finalPlan = selectedPlan;
+    try {
+      const meRes = await apiFetch("/api/auth/me");
+      const meData = await meRes.json();
+      if (meData?.user) {
+        finalPlan = meData.user.plan || finalPlan;
+        subId = meData.user.subscriptionId || subId;
+      }
+    } catch (_) {}
+
+    if (!subId) {
+      subId = localStorage.getItem("fa_subscription_id") || ("FA-SUB-" + Math.floor(100000 + Math.random() * 900000));
+    }
+
+    localStorage.setItem("fa_plan", finalPlan);
+    localStorage.setItem("fa_subscription_plan", finalPlan);
+    localStorage.setItem("fa_subscription_id", subId);
+
+    setUser((prev) => ({
+      ...prev,
+      plan: finalPlan,
+      subscriptionId: subId
+    }));
+
+    notify("Payment successful.", "success", `Subscribed to the ${finalPlan} plan.`);
     setView("success");
   };
 
   useEffect(() => {
     const receive = (event) => {
+      if (!isTrustedOrigin(event.origin)) return;
       let data = event.data;
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch (_) {}

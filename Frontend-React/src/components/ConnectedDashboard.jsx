@@ -6,6 +6,7 @@ import {
   fetchMasterDataStream,
   fetchIncrementalDataStream,
   openErp,
+  isTrustedOrigin,
 } from "../taskpane/api";
 import { ExcelService } from "../taskpane/services/excelService";
 import { flattenAllMasterDataRecords } from "../taskpane/services/excelDataMappers";
@@ -203,6 +204,7 @@ export function ConnectedDashboard({
   // Listen for OAuth completion message from popup
   useEffect(() => {
     const receive = (event) => {
+      if (!isTrustedOrigin(event.origin)) return;
       if (event.data === "qb_connected" || event.data === "xero_connected") {
         addLog(`Connection completed: ${event.data}`);
         reloadConnections().then((conns) => {

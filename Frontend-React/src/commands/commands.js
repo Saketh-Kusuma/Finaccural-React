@@ -3,33 +3,34 @@
  * See LICENSE in the project root for license information.
  */
 
-/* global Office */
+/* global Office, Excel */
 
 Office.onReady(() => {
-  // If needed, Office.js is ready to be called.
+  // Office.js is initialized
 });
 
 /**
- * Shows a notification when the add-in command is executed.
- * @param event {Office.AddinCommands.Event}
+ * Handles add-in command function execution safely for Excel host.
+ * @param {Office.AddinCommands.Event} event
  */
 function action(event) {
-  const message = {
-    type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-    message: "Performed action.",
-    icon: "Icon.80x80",
-    persistent: true,
-  };
-
-  // Show a notification message.
-  Office.context.mailbox.item.notificationMessages.replaceAsync(
-    "ActionPerformanceNotification",
-    message
-  );
-
-  // Be sure to indicate when the add-in command function is complete.
-  event.completed();
+  try {
+    if (typeof Excel !== "undefined" && Excel.run) {
+      Excel.run(async (context) => {
+        await context.sync();
+      }).catch((err) => {
+        console.warn("Excel command execution error:", err);
+      });
+    }
+  } catch (err) {
+    console.warn("Add-in command action error:", err);
+  } finally {
+    if (event && typeof event.completed === "function") {
+      event.completed();
+    }
+  }
 }
 
-// Register the function with Office.
-Office.actions.associate("action", action);
+if (typeof Office !== "undefined" && Office.actions && typeof Office.actions.associate === "function") {
+  Office.actions.associate("action", action);
+}
