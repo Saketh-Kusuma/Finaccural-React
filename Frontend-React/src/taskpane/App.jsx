@@ -4,11 +4,13 @@ import { Payment } from "../components/Payment";
 import { Plans } from "../components/Plans";
 import { TrialSelect } from "../components/TrialSelect";
 import { TrialSelectModal } from "../components/TrialSelectModal";
+import { TrialExpiredModal } from "../components/TrialExpiredModal";
 import { Welcome } from "../components/Welcome";
 import { Loading, Success } from "../components/ui";
 import { ToastContainer } from "../components/ToastContainer";
 import { NotificationDrawer } from "../components/NotificationDrawer";
 import { NotificationService } from "./services/notificationService";
+import { ExcelService } from "./services/excelService";
 import { apiFetch, openAuth, openErp, openTrialSelectDialog, isTrustedOrigin } from "./api";
 import { saveAccount } from "./accountHistory";
 
@@ -29,6 +31,7 @@ export function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTop, setDrawerTop] = useState("56px");
   const [showTrialPopup, setShowTrialPopup] = useState(false);
+  const [showTrialExpired, setShowTrialExpired] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Fetch notifications history when user email is available
@@ -171,6 +174,10 @@ export function App() {
             if (serverSubId) {
               localStorage.setItem("fa_subscription_id", serverSubId);
             }
+            if (data.user.trialEndsAt) {
+              const trialEnds = new Date(data.user.trialEndsAt).getTime();
+              localStorage.setItem("fa_trial_ends_at", String(trialEnds));
+            }
             setUser((prev) => ({
               ...prev,
               name: data.user.name || prev.name,
@@ -203,6 +210,109 @@ export function App() {
     const timer = setTimeout(initSession, 350);
     return () => { mounted = false; clearTimeout(timer); };
   }, []);
+
+  // Trial expiration watcher: Polls every second when user is on a trial plan
+  // Shows TrialExpiredModal, clears master data from Excel workbook, and syncs with backend
+  useEffect(() => {
+    const getTrialEndTimestamp = () => {
+      const trialEndsStr = localStorage.getItem("fa_trial_ends_at");
+      if (trialEndsStr) {
+        const num = Number(trialEndsStr);
+        if (!isNaN(num) && num > 0) return num;
+        const dateNum = new Date(trialEndsStr).getTime();
+        if (!isNaN(dateNum) && dateNum > 0) return dateNum;
+      }
+      const trialStartStr = localStorage.getItem("fa_trial_start");
+      if (trialStartStr) {
+        const num = Number(trialStartStr);
+        if (!isNaN(num) && num > 0) {
+          return num + 2 * 60 * 1000;
+        }
+      }
+      return null;
+    };
+
+    let checkedBackend = false;
+
+    const checkExpiration = async () => {
+      const currentPlanNow = (user?.plan || localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan") || "").toLowerCase();
+      const isPaid = currentPlanNow.includes("basic") || currentPlanNow.includes("standard") || currentPlanNow.includes("pro") || currentPlanNow.includes("enterprise");
+
+      // Paid users never see the trial expired modal
+      if (isPaid) {
+        setShowTrialExpired(false);
+        return;
+      }
+
+      const endTs = getTrialEndTimestamp();
+      const isLocallyExpired = currentPlanNow === "expired" || (endTs && Date.now() >= endTs);
+
+      if (isLocallyExpired) {
+        const isOnUpgradeScreens = view === "plans" || view === "payment" || view === "success";
+        if (!isOnUpgradeScreens) {
+          setShowTrialExpired(true);
+        }
+
+        // Clear master data from Excel workbook upon trial expiration
+        ExcelService.clearMasterData().catch((err) =>
+          console.warn("Failed to clear master data on trial expiry:", err)
+        );
+
+        // Verify status with backend if not already verified
+        if (!checkedBackend && localStorage.getItem("fa_jwt_token")) {
+          checkedBackend = true;
+          try {
+            const res = await apiFetch("/api/auth/me");
+            const data = await res.json();
+            if (data?.user) {
+              const uPlan = (data.user.plan || "").toLowerCase();
+              const serverIsPaid = uPlan.includes("basic") || uPlan.includes("standard") || uPlan.includes("pro") || uPlan.includes("enterprise");
+
+              if (serverIsPaid) {
+                // User upgraded on another device/window
+                setShowTrialExpired(false);
+                setUser((prev) => ({ ...prev, plan: data.user.plan }));
+                localStorage.setItem("fa_plan", data.user.plan);
+                localStorage.setItem("fa_subscription_plan", data.user.plan);
+              } else {
+                localStorage.setItem("fa_plan", "expired");
+                localStorage.setItem("fa_subscription_plan", "expired");
+                if (!isOnUpgradeScreens) {
+                  setShowTrialExpired(true);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Could not verify trial expiration with server:", e);
+          }
+        }
+      } else if (!endTs) {
+        // If the user has an active session but no expiration timestamp, fetch it once from server
+        // or start the 2-minute countdown so expiration is always guaranteed.
+        if (!checkedBackend && localStorage.getItem("fa_jwt_token")) {
+          checkedBackend = true;
+          try {
+            const res = await apiFetch("/api/auth/me");
+            const data = await res.json();
+            if (data?.user) {
+              if (data.user.trialEndsAt) {
+                const ts = new Date(data.user.trialEndsAt).getTime();
+                localStorage.setItem("fa_trial_ends_at", String(ts));
+              } else if (!localStorage.getItem("fa_trial_start")) {
+                localStorage.setItem("fa_trial_start", Date.now().toString());
+              }
+            }
+          } catch (_) {}
+        } else if (!localStorage.getItem("fa_trial_start")) {
+          localStorage.setItem("fa_trial_start", Date.now().toString());
+        }
+      }
+    };
+
+    checkExpiration();
+    const interval = setInterval(checkExpiration, 1000);
+    return () => clearInterval(interval);
+  }, [user?.plan, view]);
 
   const handlePaymentSuccess = async (data = {}) => {
     let selectedPlan = data?.plan || orderRef.current?.name || order?.name || "Pro";
@@ -266,6 +376,14 @@ export function App() {
       if (["qb_connected", "xero_connected"].includes(data)) {
         setView("dashboard");
       }
+      if (data?.type === "START_TRIAL") {
+        setShowTrialPopup(false);
+        startTrial();
+      }
+      if (data?.type === "VIEW_PLANS") {
+        setShowTrialPopup(false);
+        setView("plans");
+      }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
@@ -304,6 +422,10 @@ export function App() {
         localStorage.setItem("fa_plan", next.plan);
         localStorage.setItem("fa_subscription_plan", next.plan);
         if (next.subscriptionId) localStorage.setItem("fa_subscription_id", next.subscriptionId);
+        if (data.user.trialEndsAt) {
+          const trialEnds = new Date(data.user.trialEndsAt).getTime();
+          localStorage.setItem("fa_trial_ends_at", String(trialEnds));
+        }
       }
     } catch (_) {}
 
@@ -332,22 +454,34 @@ export function App() {
   const startTrial = async () => {
     setBusy(true);
     try {
-      const result = await apiFetch("/api/auth/start-trial", { method: "POST" }).then((response) => response.json());
-      const subId = result.user?.subscriptionId || ("FA-SUB-" + Math.floor(100000 + Math.random() * 900000));
-      saveUser({
-        user: result.user,
-        plan: "Free Trial",
-        subscriptionId: subId
-      });
-      localStorage.setItem("fa_plan", "Free Trial");
-      localStorage.setItem("fa_subscription_plan", "Free Trial");
-      localStorage.setItem("fa_subscription_id", subId);
-      setUser(prev => ({ ...prev, plan: "Free Trial", subscriptionId: subId }));
+      const response = await apiFetch("/api/auth/start-trial", { method: "POST" });
+      const result = await response.json();
+      const serverUser = result?.user || {};
+      const finalPlan = serverUser.plan || "trial";
+      const subId = serverUser.subscriptionId || serverUser.id || localStorage.getItem("fa_subscription_id") || ("FA-SUB-" + Math.floor(100000 + Math.random() * 900000));
+      const trialEndsAt = serverUser.trialEndsAt ? new Date(serverUser.trialEndsAt).getTime() : Date.now() + 2 * 60 * 1000;
+
+      localStorage.setItem("fa_has_subscription", "true");
+      localStorage.setItem("fa_plan", finalPlan);
+      localStorage.setItem("fa_subscription_plan", finalPlan);
+      localStorage.setItem("fa_subscription_id", String(subId));
+      localStorage.setItem("fa_trial_ends_at", String(trialEndsAt));
+      localStorage.setItem("fa_trial_start", Date.now().toString());
+
+      setUser((prev) => ({
+        ...prev,
+        name: serverUser.name || prev.name || localStorage.getItem("fa_user_name") || "",
+        email: serverUser.email || prev.email || localStorage.getItem("fa_user_email") || "",
+        plan: finalPlan,
+        subscriptionId: String(subId)
+      }));
+
       setShowTrialPopup(false);
       notify("Free Trial started successfully!", "success");
       setView("dashboard");
     } catch (error) {
-      notify("Couldn't start your free trial. Please try again.", "error");
+      console.error("Start trial error:", error);
+      notify(error.message || "Couldn't start your free trial. Please try again.", "error");
     } finally {
       setBusy(false);
     }
@@ -357,7 +491,8 @@ export function App() {
     [
       "fa_user_name", "fa_user_email", "fa_plan", "fa_subscription_plan",
       "fa_subscription_id", "fa_jwt_token", "fa_refresh_token",
-      "fa_erp_connected", "fa_erp_type"
+      "fa_erp_connected", "fa_erp_type", "fa_has_subscription",
+      "fa_trial_ends_at", "fa_trial_start"
     ].forEach((key) => localStorage.removeItem(key));
     setUser({});
     setNotifications([]);
@@ -384,6 +519,7 @@ export function App() {
           const popup = openErp(provider, user);
           if (!popup) notify("The connection window was blocked. Please allow popups and try again.", "error");
         }}
+        onTrialExpired={() => setShowTrialExpired(true)}
       />
     );
   }, [view, user, busy, order, unreadCount, toggleDrawer]);
@@ -408,6 +544,15 @@ export function App() {
           }}
           onClose={() => setShowTrialPopup(false)}
           busy={busy}
+        />
+      )}
+      {showTrialExpired && (
+        <TrialExpiredModal
+          onUpgrade={() => {
+            setShowTrialExpired(false);
+            setView("plans");
+          }}
+          onClose={() => setShowTrialExpired(false)}
         />
       )}
       {content}

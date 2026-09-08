@@ -105,6 +105,7 @@ export function Dashboard({
   notify,
   unreadCount = 0,
   onToggleNotifications,
+  onTrialExpired,
 }) {
   const [menu, setMenu] = useState(false);
   const [connected, setConnected] = useState(
@@ -172,6 +173,7 @@ export function Dashboard({
         logout={onLogout}
         onChangePlan={onChangePlan}
         onConnect={onConnect}
+        onTrialExpired={onTrialExpired}
         disconnect={() => {
           localStorage.removeItem("fa_erp_connected");
           setConnected(false);

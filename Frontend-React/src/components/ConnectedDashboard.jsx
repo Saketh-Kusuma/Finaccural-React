@@ -23,6 +23,7 @@ export function ConnectedDashboard({
   unreadCount = 0,
   onToggleNotifications,
   onConnect,
+  onTrialExpired,
 }) {
   const [journal, setJournal] = useState("accrual");
   const [menu, setMenu] = useState(false);
@@ -36,8 +37,8 @@ export function ConnectedDashboard({
     user.plan ||
     localStorage.getItem("fa_plan") ||
     localStorage.getItem("fa_subscription_plan") ||
-    "Pro";
-  const planClean = storedPlan.replace(/\s*plan\s*/i, "").trim() || "Pro";
+    "Trial";
+  const planClean = storedPlan.replace(/\s*plan\s*/i, "").trim() || "Trial";
   const planDisplay = `${planClean.toUpperCase()} PLAN`;
   const name = user.name || localStorage.getItem("fa_user_name") || "Sai";
 
@@ -57,6 +58,7 @@ export function ConnectedDashboard({
     planClean,
     label: companyConn.label,
     notify,
+    onTrialExpired,
   });
 
   return (

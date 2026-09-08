@@ -13,6 +13,7 @@ export function useMasterDataSync({
   planClean,
   label,
   notify,
+  onTrialExpired,
 }) {
   const [spinning, setSpinning] = useState(false);
   const [setupBusy, setSetupBusy] = useState(false);
@@ -28,7 +29,38 @@ export function useMasterDataSync({
     setLogs((prev) => [...prev, `[${time}] ${msg}`]);
   }, []);
 
+  const checkTrialExpiredGuard = () => {
+    const currentPlan = (localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan") || "").toLowerCase();
+    const isPaid = currentPlan.includes("basic") || currentPlan.includes("standard") || currentPlan.includes("pro") || currentPlan.includes("enterprise");
+    if (isPaid) return false;
+
+    let isExpired = currentPlan === "expired";
+    const trialEndsStr = localStorage.getItem("fa_trial_ends_at");
+    if (trialEndsStr) {
+      const num = Number(trialEndsStr);
+      if (!isNaN(num) && num > 0 && Date.now() >= num) isExpired = true;
+      const dateNum = new Date(trialEndsStr).getTime();
+      if (!isNaN(dateNum) && dateNum > 0 && Date.now() >= dateNum) isExpired = true;
+    }
+    const trialStartStr = localStorage.getItem("fa_trial_start");
+    if (trialStartStr) {
+      const num = Number(trialStartStr);
+      if (!isNaN(num) && num > 0 && Date.now() >= (num + 2 * 60 * 1000)) isExpired = true;
+    }
+
+    if (isExpired) {
+      const msg = "Your free trial has expired. Please upgrade your plan to continue.";
+      addLog(`Action failed: ${msg}`);
+      notify("Trial Expired", "error", "Please upgrade your plan to perform data actions.", provider);
+      ExcelService.clearMasterData().catch((e) => console.error("Failed to clear master data on trial expiry", e));
+      if (onTrialExpired) onTrialExpired();
+      return true;
+    }
+    return false;
+  };
+
   const handleSetup = async () => {
+    if (checkTrialExpiredGuard()) return;
     if (setupBusy) return;
     setSetupBusy(true);
     addLog(`Setting up Master & Input sheets for ${label}...`);
@@ -49,6 +81,7 @@ export function useMasterDataSync({
   };
 
   const handlePull = async () => {
+    if (checkTrialExpiredGuard()) return;
     if (pullBusy) return;
 
     if (!isSetupDone) {
@@ -112,6 +145,7 @@ export function useMasterDataSync({
   };
 
   const handleRefresh = async () => {
+    if (checkTrialExpiredGuard()) return;
     if (spinning) return;
     setSpinning(true);
     const activeId = activeConnection?.companyId || realmId || "";
