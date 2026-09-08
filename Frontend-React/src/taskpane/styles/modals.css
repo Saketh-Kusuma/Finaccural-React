@@ -1,0 +1,723 @@
+/* ============================================================
+   modals.css
+
+   Overlays and standalone screens — the global error banner/toast system,
+   the new welcome screen, the account-picker modal, the trial-select screen
+   and the ERP OAuth "Redirecting to <provider>..." transition card.
+
+   Extracted from taskpane.css. The four style modules are a strictly
+   sequential split of the original file, so the cascade order after the
+   @imports in taskpane.css is byte-for-byte the one the rules were
+   authored in.
+   ============================================================ */
+
+/* ============================================================
+   GLOBAL ERROR HANDLING UI
+   Driven by shared/apiErrorHandler.js. Sits above every view.
+   ============================================================ */
+
+/* Persistent, actionable banner — used for the offline/server-unreachable
+   scenario (red) and the ERP connection expired scenario (orange). */
+.fa-global-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 99999;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  animation: faBannerSlideDown 0.25s ease;
+}
+
+@keyframes faBannerSlideDown {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+
+.fa-banner-flash {
+  animation: faBannerShake 0.35s ease-in-out !important;
+}
+
+@keyframes faBannerShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.fa-global-banner-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.fa-global-banner-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.fa-global-banner-action {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.fa-global-banner-action:hover {
+  opacity: 0.85;
+}
+
+.fa-global-banner-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.7;
+  font-family: inherit;
+}
+
+.fa-global-banner-dismiss:hover {
+  opacity: 1;
+}
+
+/* Offline / cannot-reach-server — red */
+.fa-global-banner-offline {
+  background: #fff1f2;
+  color: #be123c;
+  border-bottom: 1px solid #fda4af;
+}
+
+.fa-global-banner-offline .fa-global-banner-action {
+  background: #be123c;
+  color: #fff;
+}
+
+.fa-global-banner-offline .fa-global-banner-dismiss {
+  color: #be123c;
+}
+
+/* ERP (QuickBooks/Xero) connection expired — orange */
+.fa-global-banner-erp {
+  background: #fff7e6;
+  color: #b45309;
+  border-bottom: 1px solid #fde68a;
+}
+
+.fa-global-banner-erp .fa-global-banner-action {
+  background: #b45309;
+  color: #fff;
+}
+
+.fa-global-banner-erp .fa-global-banner-dismiss {
+  color: #b45309;
+}
+
+/* Generic fallback — used sparingly */
+.fa-global-banner-error {
+  background: #fff1f2;
+  color: #be123c;
+  border-bottom: 1px solid #fda4af;
+}
+
+/* Transient toast — used for the session-expired notice */
+.fa-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 100000;
+  background: #1a2035;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  max-width: 90%;
+  text-align: center;
+}
+
+.fa-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* --- NEW WELCOME SCREEN STYLES --- */
+.welcome-screen-new {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: #ffffff;
+  gap: 24px;
+  text-align: center;
+}
+.welcome-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.welcome-logo-large {
+  margin-bottom: 8px;
+}
+.welcome-logo-box {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #2b6cf5, #6c4df6);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(43, 108, 245, 0.3);
+}
+.welcome-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #172b56;
+  margin: 0;
+}
+.welcome-subtitle-gradient {
+  font-size: 13px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #6c4df6, #2b6cf5);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+.welcome-divider-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  opacity: 0.7;
+}
+.welcome-line {
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+.welcome-shield-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.welcome-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+.welcome-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0;
+}
+.btn-sign-in-primary {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(90deg, #6c4df6, #2b6cf5);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 12px rgba(108, 77, 246, 0.25);
+}
+.btn-sign-in-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(108, 77, 246, 0.3);
+}
+.btn-sign-in-icon {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.welcome-secure-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* --- CUSTOM ACCOUNT PICKER MODAL --- */
+.custom-modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+.custom-modal-overlay.active {
+  display: flex;
+}
+.custom-account-picker {
+  background: #ffffff;
+  width: 90%;
+  max-width: 440px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+}
+.picker-header {
+  padding: 32px 32px 16px 32px;
+}
+.picker-tenant {
+  font-size: 13px;
+  font-weight: 600;
+  color: #323130;
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.picker-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1b1b1b;
+  margin: 0 0 8px 0;
+}
+.picker-subtitle {
+  font-size: 15px;
+  color: #1b1b1b;
+  margin: 0;
+}
+.picker-accounts {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 24px;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 32px;
+  cursor: pointer;
+  background: #ffffff;
+  border-top: 1px solid #e1dfdd;
+  transition: background 0.15s;
+}
+.account-row:hover {
+  background: #f3f2f1;
+}
+.account-row:last-child {
+  border-bottom: 1px solid #e1dfdd;
+}
+.account-avatar {
+  width: 32px;
+  height: 32px;
+  margin-right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.account-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.account-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1b1b1b;
+}
+.account-email {
+  font-size: 13px;
+  color: #605e5c;
+  margin-top: 2px;
+}
+.account-status {
+  font-size: 13px;
+  color: #605e5c;
+  margin-top: 2px;
+}
+.add-account-row .account-name {
+  font-weight: 400;
+}
+.account-options {
+  padding: 8px;
+}
+
+/* ============================================================
+   TRIAL SELECT SCREEN
+   ============================================================ */
+.trial-select-screen {
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: #ffffff;
+  min-height: 100vh;
+}
+
+.trial-select-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.trial-select-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #172b56;
+  margin: 0 0 8px 0;
+}
+
+.trial-select-subtitle {
+  font-size: 14px;
+  color: #172b56;
+  font-weight: 500;
+  margin: 0;
+}
+
+.trial-select-cards {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.trial-select-card {
+  flex: 1;
+  border: 1px solid #dcdfe4;
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background-color: white;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.trial-select-card:hover {
+  border-color: #6C4DF6;
+  box-shadow: 0 8px 24px rgba(108, 77, 246, 0.1);
+  transform: translateY(-2px);
+}
+
+.trial-select-icon-box {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: #6C4DF6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.trial-select-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #172b56;
+  margin: 0 0 8px 0;
+}
+
+.trial-select-card-desc {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.4;
+  margin: 0 0 20px 0;
+  min-height: 36px;
+}
+
+.trial-select-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px 0;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trial-select-features li {
+  font-size: 13px;
+  color: #172b56;
+  display: flex;
+  align-items: flex-start;
+}
+
+.trial-select-features .check {
+  color: #6C4DF6;
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.btn-trial-action {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: #6C4DF6;
+  color: white;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  margin-top: auto;
+  transition: background-color 0.2s;
+}
+
+.btn-trial-action:hover {
+  background-color: #5538d6;
+}
+
+.trial-select-secure {
+  margin-top: 30px;
+  font-size: 13px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ============================================================
+   ERP OAuth "Redirecting to <provider>..." transition modal
+   (#dashConnecting) — shown by DashboardService.showConnecting()/
+   launchERPOAuth() in taskpane.js before the QuickBooks/Xero OAuth
+   popup opens. Branding is switched via the [data-provider] attribute
+   on .redirect-card ("qb" | "xero"); everything below reads off the
+   --redirect-accent/--redirect-accent-dark custom properties so the
+   two providers share one set of rules.
+   ============================================================ */
+.redirect-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 2000;
+  padding: 16px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+}
+
+.redirect-card {
+  --redirect-accent: #2CA01C;
+  --redirect-accent-dark: #16a34a;
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 8px 16px -8px rgba(0, 0, 0, 0.15);
+  width: 100%;
+  max-width: 300px;
+  margin: auto;
+  padding: 30px 22px 20px;
+  box-sizing: border-box;
+  text-align: center;
+  animation: modalScaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.redirect-card[data-provider="xero"] {
+  --redirect-accent: #13B5EA;
+  --redirect-accent-dark: #0ea5c4;
+}
+
+.redirect-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.redirect-close-btn:hover {
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.redirect-logo-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--redirect-accent);
+  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.2);
+}
+
+.redirect-logo-badge span {
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.redirect-brand-name {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #172b56;
+  margin: 0 0 16px;
+}
+
+.redirect-illustration {
+  position: relative;
+  width: 100%;
+  height: 88px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.redirect-lock-bg {
+  fill: var(--redirect-accent);
+}
+
+.redirect-illustration .spark {
+  position: absolute;
+  color: #cbd5e1;
+  animation: redirectSparkle 2s ease-in-out infinite;
+}
+
+.redirect-illustration .spark--1 { top: 0; left: 6px; animation-delay: 0s; }
+.redirect-illustration .spark--2 { top: 4px; right: 8px; animation-delay: 0.6s; }
+.redirect-illustration .spark--3 { bottom: 2px; left: 20px; animation-delay: 1.2s; }
+
+@keyframes redirectSparkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+.redirect-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0F2D6B;
+  margin: 0 0 4px;
+}
+
+.redirect-subtext {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0 0 18px;
+}
+
+.redirect-progress-track {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.redirect-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--redirect-accent-dark), var(--redirect-accent));
+  transition: width 1s linear;
+}
+
+.redirect-countdown {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 0 0 14px;
+}
+
+.redirect-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.redirect-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  transition: background-color 0.3s ease, transform 0.3s ease;
+}
+
+.redirect-dots .dot.active {
+  background: var(--redirect-accent);
+  transform: scale(1.25);
+}
+
+.redirect-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #94a3b8;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+}
+
+.redirect-footer svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* Phase 2 of the redirect card — "Waiting for you to sign in..." spinner,
+   shown once the popup/dialog is confirmed open (see #redirectWaitingView
+   in taskpane.html and DashboardService.showRedirectWaitingState() in
+   taskpane.js). Reuses the existing global @keyframes spin. */
+.redirect-spinner {
+  width: 44px;
+  height: 44px;
+  margin: 4px auto 22px;
+  border: 4px solid #e2e8f0;
+  border-top-color: var(--redirect-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}

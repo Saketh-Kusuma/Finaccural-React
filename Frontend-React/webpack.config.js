@@ -1,0 +1,49 @@
+const devCerts = require("office-addin-dev-certs");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
+const HtmlWebpackPlugin = require("html-webpack-plugin");
+
+async function getHttpsOptions() {
+  const options = await devCerts.getHttpsServerOptions();
+  return { ca: options.ca, key: options.key, cert: options.cert };
+}
+
+module.exports = async (env, options) => ({
+  devtool: "source-map",
+  entry: {
+    polyfill: ["core-js/stable", "regenerator-runtime/runtime"],
+    taskpane: "./src/taskpane/index.jsx",
+    commands: "./src/commands/commands.js"
+  },
+  output: { clean: true },
+  resolve: { extensions: [".js", ".jsx"] },
+  module: {
+    rules: [{
+      test: /\.jsx?$/,
+      exclude: /node_modules/,
+      use: {
+        loader: "babel-loader",
+        options: { presets: [["@babel/preset-env", { targets: "defaults" }], ["@babel/preset-react", { runtime: "automatic" }]] }
+      }
+    }, {
+      test: /\.(png|jpg|jpeg|gif|ico)$/i,
+      type: "asset/resource",
+      generator: { filename: "assets/[name][ext][query]" }
+    }]
+  },
+  plugins: [
+    new HtmlWebpackPlugin({ filename: "taskpane.html", template: "./src/taskpane/index.html", chunks: ["polyfill", "taskpane"] }),
+    new HtmlWebpackPlugin({ filename: "commands.html", template: "./src/commands/commands.html", chunks: ["polyfill", "commands"] }),
+    new HtmlWebpackPlugin({ filename: "trialselect.html", template: "./src/taskpane/trialselect.html", chunks: ["polyfill"] }),
+    new CopyWebpackPlugin({ patterns: [
+      { from: "assets/*", to: "assets/[name][ext][query]" },
+      { from: "src/taskpane/taskpane.css", to: "taskpane.css" },
+      { from: "src/taskpane/styles/*.css", to: "styles/[name][ext]" },
+      { from: "manifest.xml", to: "manifest.xml" }
+    ] })
+  ],
+  devServer: {
+    headers: { "Access-Control-Allow-Origin": "*" },
+    server: { type: "https", options: env.WEBPACK_BUILD || options.https !== undefined ? options.https : await getHttpsOptions() },
+    port: 3001
+  }
+});
