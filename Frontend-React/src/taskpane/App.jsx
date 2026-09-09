@@ -155,9 +155,10 @@ export function App() {
     [
       "fa_user_name", "fa_user_email", "fa_plan", "fa_subscription_plan",
       "fa_subscription_id", "fa_jwt_token", "fa_refresh_token",
-      "fa_erp_connected", "fa_erp_type", "fa_has_subscription",
+      "fa_erp_connected", "fa_erp_type", "fa_current_company_id", "fa_has_subscription",
       "fa_trial_ends_at", "fa_trial_start"
     ].forEach((key) => localStorage.removeItem(key));
+    sessionStorage.removeItem("fa_erp_user_disconnected");
     setUser({});
     setNotifications([]);
     setShowTrialPopup(false);
@@ -226,6 +227,21 @@ export function App() {
             subscriptionId: serverSubId || prev.subscriptionId
           }));
           if (serverPlan) {
+            try {
+              const connRes = await apiFetch(`/api/connections?mail=${encodeURIComponent(data.user.email || email)}`);
+              const conns = await connRes.json();
+              if (Array.isArray(conns) && conns.length > 0) {
+                const activeConn = conns.find((c) => c.status !== "Disconnected") || conns[0];
+                if (activeConn && activeConn.status !== "Disconnected") {
+                  const plat = (activeConn.platform || "").toLowerCase().includes("xero") ? "xero" : "quickbooks";
+                  localStorage.setItem("fa_erp_connected", "true");
+                  localStorage.setItem("fa_erp_type", plat);
+                  if (activeConn.companyId) {
+                    localStorage.setItem("fa_current_company_id", activeConn.companyId);
+                  }
+                }
+              }
+            } catch (_) {}
             setView("dashboard");
           } else {
             setView("welcome");
@@ -506,6 +522,21 @@ export function App() {
 
     setUser(next);
     if (next.plan) {
+      try {
+        const connRes = await apiFetch(`/api/connections?mail=${encodeURIComponent(next.email)}`);
+        const conns = await connRes.json();
+        if (Array.isArray(conns) && conns.length > 0) {
+          const activeConn = conns.find((c) => c.status !== "Disconnected") || conns[0];
+          if (activeConn && activeConn.status !== "Disconnected") {
+            const plat = (activeConn.platform || "").toLowerCase().includes("xero") ? "xero" : "quickbooks";
+            localStorage.setItem("fa_erp_connected", "true");
+            localStorage.setItem("fa_erp_type", plat);
+            if (activeConn.companyId) {
+              localStorage.setItem("fa_current_company_id", activeConn.companyId);
+            }
+          }
+        }
+      } catch (_) {}
       setView("dashboard");
     } else {
       // Pop up the Choose Your Plan dialog, keep background on welcome or loading

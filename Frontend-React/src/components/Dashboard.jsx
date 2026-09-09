@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ConnectedDashboard } from "./ConnectedDashboard";
 import { initials } from "./ui";
 import { AccountMenu } from "./AccountMenu";
-import { isTrustedOrigin } from "../taskpane/api";
+import { isTrustedOrigin, apiFetch } from "../taskpane/api";
 
 /* ---- Inline SVG icons ---- */
 function BellIcon() {
@@ -109,11 +109,56 @@ export function Dashboard({
 }) {
   const [menu, setMenu] = useState(false);
   const [connected, setConnected] = useState(
-    localStorage.getItem("fa_erp_connected") === "true",
+    () => localStorage.getItem("fa_erp_connected") === "true",
   );
   const [provider, setProvider] = useState(
-    localStorage.getItem("fa_erp_type") || "",
+    () => localStorage.getItem("fa_erp_type") || "",
   );
+  const [checkingConnections, setCheckingConnections] = useState(
+    () => !connected && sessionStorage.getItem("fa_erp_user_disconnected") !== "true",
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    const email = user?.email || localStorage.getItem("fa_user_email") || "";
+    const isManuallyDisconnected = sessionStorage.getItem("fa_erp_user_disconnected") === "true";
+
+    if (isManuallyDisconnected || !email) {
+      setCheckingConnections(false);
+      return;
+    }
+
+    apiFetch(`/api/connections?mail=${encodeURIComponent(email)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!mounted) return;
+        if (Array.isArray(data) && data.length > 0) {
+          const activeConn = data.find((c) => c.status !== "Disconnected") || data[0];
+          if (activeConn && activeConn.status !== "Disconnected") {
+            const detectedProvider = (activeConn.platform || "").toLowerCase().includes("xero")
+              ? "xero"
+              : "quickbooks";
+            localStorage.setItem("fa_erp_connected", "true");
+            localStorage.setItem("fa_erp_type", detectedProvider);
+            if (activeConn.companyId) {
+              localStorage.setItem("fa_current_company_id", activeConn.companyId);
+            }
+            setProvider(detectedProvider);
+            setConnected(true);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not check ERP connections:", err);
+      })
+      .finally(() => {
+        if (mounted) setCheckingConnections(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.email]);
 
   useEffect(() => {
     const receive = (event) => {
@@ -125,6 +170,7 @@ export function Dashboard({
             ? "quickbooks"
             : null;
       if (!next) return;
+      sessionStorage.removeItem("fa_erp_user_disconnected");
       localStorage.setItem("fa_erp_connected", "true");
       localStorage.setItem("fa_erp_type", next);
       setProvider(next);
@@ -135,6 +181,7 @@ export function Dashboard({
   }, []);
 
   const connect = (next) => {
+    sessionStorage.removeItem("fa_erp_user_disconnected");
     setProvider(next);
     onConnect(next);
   };
@@ -175,10 +222,22 @@ export function Dashboard({
         onConnect={onConnect}
         onTrialExpired={onTrialExpired}
         disconnect={() => {
+          sessionStorage.setItem("fa_erp_user_disconnected", "true");
           localStorage.removeItem("fa_erp_connected");
+          localStorage.removeItem("fa_erp_type");
+          localStorage.removeItem("fa_current_company_id");
           setConnected(false);
         }}
       />
+    );
+  }
+
+  if (checkingConnections) {
+    return (
+      <div className="loading-screen" style={{ minHeight: "100%" }}>
+        <div className="loading-spinner" />
+        <span className="loading-text">Loading dashboard...</span>
+      </div>
     );
   }
 

@@ -108,7 +108,17 @@ export function ConnectedDashboard({
 
       {/* ── Header row 2: Realm/Tenant + status ── */}
       <div className="fa-header-row2">
-        <button className="fa-disconnect-btn" onClick={disconnect}>
+        <button
+          className="fa-disconnect-btn"
+          onClick={async () => {
+            if (companyConn.activeConnection) {
+              await companyConn.handleDisconnectCompany(companyConn.activeConnection);
+            }
+            if (companyConn.platformConns.length <= 1) {
+              disconnect();
+            }
+          }}
+        >
           Disconnect {companyConn.label}
         </button>
         <span className="fa-conn-dot">●</span>
