@@ -80,7 +80,23 @@ export function useCompanyConnections({
       if (!isTrustedOrigin(event.origin)) return;
       if (event.data === "qb_connected" || event.data === "xero_connected") {
         if (addLog) addLog(`Connection completed: ${event.data}`);
+        const pendingReconnectId = typeof sessionStorage !== "undefined"
+          ? sessionStorage.getItem("fa_pending_reconnect_id")
+          : null;
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.removeItem("fa_pending_reconnect_id");
+        }
+
         reloadConnections().then((conns) => {
+          if (pendingReconnectId) {
+            const reconnected = conns.find((c) => c.companyId === pendingReconnectId);
+            if (reconnected) {
+              setActiveCompanyId(reconnected.companyId);
+              localStorage.setItem("fa_current_company_id", reconnected.companyId);
+              notify("Company reconnected successfully.", "success", `${reconnected.companyName || label} is now active and re-authorized.`, provider);
+              return;
+            }
+          }
           const matching = conns.filter(
             (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()
           );
@@ -94,7 +110,18 @@ export function useCompanyConnections({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [provider, reloadConnections, addLog]);
+  }, [provider, reloadConnections, addLog, label, notify]);
+
+  useEffect(() => {
+    const handleErpExpired = (event) => {
+      const details = event?.detail || {};
+      if (addLog) addLog(`ERP session expired: ${details.message || "Please reconnect company."}`);
+      notify("Connection Expired", "error", details.message || `Your ${label} connection has expired. Please click Reconnect to restore access.`, provider);
+      reloadConnections();
+    };
+    window.addEventListener("fa_erp_session_expired", handleErpExpired);
+    return () => window.removeEventListener("fa_erp_session_expired", handleErpExpired);
+  }, [label, provider, addLog, notify, reloadConnections]);
 
   const platformConns = connections.filter(
     (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()

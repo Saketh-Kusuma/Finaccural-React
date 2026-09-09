@@ -623,8 +623,8 @@ export function App() {
         onToggleNotifications={toggleDrawer}
         onLogout={logout}
         onChangePlan={() => setView("plans")}
-        onConnect={(provider) => {
-          const popup = openErp(provider, user);
+        onConnect={(provider, reconnectId) => {
+          const popup = openErp(provider, user, reconnectId);
           if (!popup) notify("The connection window was blocked. Please allow popups and try again.", "error");
         }}
         onTrialExpired={() => setShowTrialExpired(true)}

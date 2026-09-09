@@ -53,6 +53,18 @@ export async function apiFetch(path, options = {}) {
   const response = await fetch(path.startsWith("http") ? path : `${API_BASE}${path}`, { ...options, headers });
 
   if (response.status === 401) {
+    let errJson = null;
+    try {
+      errJson = await response.clone().json();
+    } catch (_) {}
+
+    if (errJson?.code === "ERR_ERP_SESSION_EXPIRED") {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("fa_erp_session_expired", { detail: errJson }));
+      }
+      throw new Error(errJson.message || "Your ERP session has expired. Please reconnect.");
+    }
+
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("fa_session_expired"));
     }
@@ -79,10 +91,21 @@ export function openAuth(provider, onProfile, loginHint) {
   window.addEventListener("message", receive);
 }
 
-export function openErp(provider, user) {
-  const path = provider === "quickbooks" ? "/api/quickbooks/connect/" : "/api/xero/connect";
-  const params = new URLSearchParams({ tier: user.plan || "", mail: user.email || "", token: localStorage.getItem("fa_jwt_token") || "" });
-  return window.open(`${API_BASE}${path}?${params}`, `fa_${provider}_auth`, "width=800,height=600,resizable=yes,scrollbars=yes");
+export function openErp(provider, user, reconnectId = null) {
+  const path = provider === "quickbooks" ? "/api/quickbooks/connect" : "/api/xero/connect";
+  const queryObj = {
+    tier: user.plan || "",
+    mail: user.email || "",
+    token: localStorage.getItem("fa_jwt_token") || ""
+  };
+  if (reconnectId) {
+    queryObj.reconnectId = reconnectId;
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem("fa_pending_reconnect_id", reconnectId);
+    }
+  }
+  const params = new URLSearchParams(queryObj);
+  return window.open(`${API_BASE}${path}?${params.toString()}`, `fa_${provider}_auth`, "width=800,height=600,resizable=yes,scrollbars=yes");
 }
 
 export function openTrialSelectDialog(onAction) {

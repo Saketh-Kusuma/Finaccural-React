@@ -8,6 +8,7 @@ export function ChangeCompanyModal({
   onClose,
   onSwitchCompany,
   onAddAnotherCompany,
+  onReconnectCompany,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedId, setSelectedId] = useState(initialCompanyId);
@@ -82,6 +83,19 @@ export function ChangeCompanyModal({
                     {cIsXero ? "Tenant ID" : "Realm ID"}: {c.companyId || "—"}
                   </div>
                 </div>
+                {isDisconnected && onReconnectCompany && (
+                  <button
+                    className="fa-btn-reconnect"
+                    style={{ marginLeft: "auto" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClose();
+                      onReconnectCompany(c);
+                    }}
+                  >
+                    Reconnect
+                  </button>
+                )}
               </div>
             );
           })}

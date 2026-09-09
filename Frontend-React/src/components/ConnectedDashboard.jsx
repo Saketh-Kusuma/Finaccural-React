@@ -156,10 +156,13 @@ export function ConnectedDashboard({
           connectedCount={companyConn.connectedCount}
           onAddCompanyClick={companyConn.handleAddCompanyClick}
           onSwitchActiveCompany={companyConn.switchActiveCompany}
-          onReconnectCompany={() => {
-            notify("Launching re-authorization...", "success", null, provider);
-            if (onConnect) onConnect(provider);
-            else openErp(provider, user);
+          onReconnectCompany={(targetCompany) => {
+            const target = targetCompany || companyConn.activeConnection;
+            const reconnectId = target?.companyId || companyConn.realmId || null;
+            const compName = target?.companyName || companyConn.companyName || "company";
+            notify(`Reconnecting ${compName}...`, "success", `Launching re-authorization for ${compName}`, provider);
+            if (onConnect) onConnect(provider, reconnectId);
+            else openErp(provider, user, reconnectId);
           }}
           onOpenContextMenu={(e, c) => {
             const rect = e.currentTarget.getBoundingClientRect();
@@ -210,6 +213,13 @@ export function ConnectedDashboard({
         onClose={() => setShowChangeModal(false)}
         onSwitchCompany={companyConn.switchActiveCompany}
         onAddAnotherCompany={companyConn.handleAddCompanyClick}
+        onReconnectCompany={(targetCompany) => {
+          const reconnectId = targetCompany?.companyId || null;
+          const compName = targetCompany?.companyName || "company";
+          notify(`Reconnecting ${compName}...`, "success", `Launching re-authorization for ${compName}`, provider);
+          if (onConnect) onConnect(provider, reconnectId);
+          else openErp(provider, user, reconnectId);
+        }}
       />
 
       <RenameCompanyModal

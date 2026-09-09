@@ -59,8 +59,24 @@ export function useMasterDataSync({
     return false;
   };
 
+  const checkExpiredCompanyGuard = () => {
+    if (activeConnection?.status === "Disconnected") {
+      const compName = activeConnection?.companyName || "company";
+      addLog(`Action blocked: Connection for ${compName} has expired. Please reconnect.`);
+      notify(
+        "Connection Expired",
+        "error",
+        `The connection for ${compName} has expired. Please click Reconnect in the company list to restore access.`,
+        provider
+      );
+      return true;
+    }
+    return false;
+  };
+
   const handleSetup = async () => {
     if (checkTrialExpiredGuard()) return;
+    if (checkExpiredCompanyGuard()) return;
     if (setupBusy) return;
     setSetupBusy(true);
     addLog(`Setting up Master & Input sheets for ${label}...`);
@@ -82,6 +98,7 @@ export function useMasterDataSync({
 
   const handlePull = async () => {
     if (checkTrialExpiredGuard()) return;
+    if (checkExpiredCompanyGuard()) return;
     if (pullBusy) return;
 
     if (!isSetupDone) {
@@ -146,6 +163,7 @@ export function useMasterDataSync({
 
   const handleRefresh = async () => {
     if (checkTrialExpiredGuard()) return;
+    if (checkExpiredCompanyGuard()) return;
     if (spinning) return;
     setSpinning(true);
     const activeId = activeConnection?.companyId || realmId || "";

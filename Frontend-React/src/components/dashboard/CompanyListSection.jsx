@@ -52,7 +52,19 @@ export function CompanyListSection({
               <div className="fa-company-tag">Last Sync: {lastSyncText}</div>
             </div>
             <div className="fa-company-actions">
-              <span className="fa-badge-active">ACTIVE</span>
+              {activeConnection?.status === "Disconnected" ? (
+                <button
+                  className="fa-btn-reconnect"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReconnectCompany(activeConnection || { companyId: realmId, companyName, platform: provider });
+                  }}
+                >
+                  Reconnect
+                </button>
+              ) : (
+                <span className="fa-badge-active">ACTIVE</span>
+              )}
               <button
                 className="fa-btn-dots"
                 title="More options"
@@ -115,7 +127,7 @@ export function CompanyListSection({
                       className="fa-btn-reconnect"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onReconnectCompany();
+                        onReconnectCompany(c);
                       }}
                     >
                       Reconnect
