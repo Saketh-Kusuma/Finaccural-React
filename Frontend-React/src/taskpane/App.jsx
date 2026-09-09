@@ -11,7 +11,7 @@ import { ToastContainer } from "../components/ToastContainer";
 import { NotificationDrawer } from "../components/NotificationDrawer";
 import { NotificationService } from "./services/notificationService";
 import { ExcelService } from "./services/excelService";
-import { apiFetch, openAuth, openErp, openTrialSelectDialog, isTrustedOrigin } from "./api";
+import { apiFetch, openAuth, openErp, openTrialSelectDialog, isTrustedOrigin, isTokenExpired } from "./api";
 import { saveAccount } from "./accountHistory";
 
 const initialUser = () => ({
@@ -33,6 +33,7 @@ export function App() {
   const [showTrialPopup, setShowTrialPopup] = useState(false);
   const [showTrialExpired, setShowTrialExpired] = useState(false);
   const [busy, setBusy] = useState(false);
+  const hasNotifiedSessionExpiredRef = useRef(false);
 
   // Fetch notifications history when user email is available
   const loadNotifications = useCallback(async () => {
@@ -150,70 +151,124 @@ export function App() {
   // Keep orderRef in sync so asynchronous message callbacks can always read the latest selected plan
   useEffect(() => { orderRef.current = order; }, [order]);
 
+  const logout = useCallback(() => {
+    [
+      "fa_user_name", "fa_user_email", "fa_plan", "fa_subscription_plan",
+      "fa_subscription_id", "fa_jwt_token", "fa_refresh_token",
+      "fa_erp_connected", "fa_erp_type", "fa_has_subscription",
+      "fa_trial_ends_at", "fa_trial_start"
+    ].forEach((key) => localStorage.removeItem(key));
+    setUser({});
+    setNotifications([]);
+    setShowTrialPopup(false);
+    setShowTrialExpired(false);
+    ExcelService.clearMasterData().catch(() => {});
+    setView("welcome");
+  }, []);
+
+  // Global session expiration handler (e.g. 401 from backend or expired JWT)
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      logout();
+      if (!hasNotifiedSessionExpiredRef.current) {
+        hasNotifiedSessionExpiredRef.current = true;
+        notify("Your session has expired. Please sign in again.", "error");
+      }
+    };
+    window.addEventListener("fa_session_expired", handleSessionExpired);
+    return () => window.removeEventListener("fa_session_expired", handleSessionExpired);
+  }, [logout, notify]);
+
   // Session bootstrap & backend sync
   useEffect(() => {
     let mounted = true;
     async function initSession() {
       const email = localStorage.getItem("fa_user_email");
       const token = localStorage.getItem("fa_jwt_token");
-      if (!email) {
+      if (!email || !token) {
         if (mounted) setView("welcome");
         return;
       }
-      if (token) {
-        try {
-          const res = await apiFetch("/api/auth/me");
-          const data = await res.json();
-          if (mounted && data?.user) {
-            const serverPlan = data.user.plan || localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan") || "";
-            const serverSubId = data.user.subscriptionId || localStorage.getItem("fa_subscription_id") || "";
-            if (serverPlan) {
-              localStorage.setItem("fa_plan", serverPlan);
-              localStorage.setItem("fa_subscription_plan", serverPlan);
-            }
-            if (serverSubId) {
-              localStorage.setItem("fa_subscription_id", serverSubId);
-            }
-            if (data.user.trialEndsAt) {
-              const trialEnds = new Date(data.user.trialEndsAt).getTime();
-              localStorage.setItem("fa_trial_ends_at", String(trialEnds));
-            }
-            setUser((prev) => ({
-              ...prev,
-              name: data.user.name || prev.name,
-              email: data.user.email || prev.email,
-              plan: serverPlan,
-              subscriptionId: serverSubId || prev.subscriptionId
-            }));
-            if (serverPlan) {
-              setView("dashboard");
-            } else {
-              setView("welcome");
-              handleOpenTrialSelect();
-            }
-            return;
+      if (isTokenExpired(token)) {
+        if (mounted) {
+          logout();
+          if (!hasNotifiedSessionExpiredRef.current) {
+            hasNotifiedSessionExpiredRef.current = true;
+            notify("Your session has expired. Please sign in again.", "error");
           }
-        } catch (e) {
-          console.warn("Session restore verify failed:", e);
         }
+        return;
       }
-      if (mounted) {
-        const storedPlan = localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan");
-        if (storedPlan) {
-          setView("dashboard");
-        } else {
-          setView("welcome");
-          handleOpenTrialSelect();
+
+      try {
+        const res = await apiFetch("/api/auth/me");
+        const data = await res.json();
+        if (mounted && data?.user) {
+          hasNotifiedSessionExpiredRef.current = false;
+          const serverPlan = data.user.plan || localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan") || "";
+          const serverSubId = data.user.subscriptionId || localStorage.getItem("fa_subscription_id") || "";
+          if (serverPlan) {
+            localStorage.setItem("fa_plan", serverPlan);
+            localStorage.setItem("fa_subscription_plan", serverPlan);
+          }
+          if (serverSubId) {
+            localStorage.setItem("fa_subscription_id", serverSubId);
+          }
+          if (data.user.trialEndsAt) {
+            const trialEnds = new Date(data.user.trialEndsAt).getTime();
+            localStorage.setItem("fa_trial_ends_at", String(trialEnds));
+          }
+          setUser((prev) => ({
+            ...prev,
+            name: data.user.name || prev.name,
+            email: data.user.email || prev.email,
+            plan: serverPlan,
+            subscriptionId: serverSubId || prev.subscriptionId
+          }));
+          if (serverPlan) {
+            setView("dashboard");
+          } else {
+            setView("welcome");
+            handleOpenTrialSelect();
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn("Session restore verify failed:", e);
+        if (mounted) {
+          logout();
+          if (!hasNotifiedSessionExpiredRef.current) {
+            hasNotifiedSessionExpiredRef.current = true;
+            notify("Your session has expired. Please sign in again.", "error");
+          }
         }
       }
     }
     const timer = setTimeout(initSession, 350);
     return () => { mounted = false; clearTimeout(timer); };
-  }, []);
+  }, [logout, notify]);
 
   // Trial expiration watcher: Polls every second when user is on a trial plan
   // Shows TrialExpiredModal, clears master data from Excel workbook, and syncs with backend
   useEffect(() => {
+    // CRITICAL: NEVER run watcher on welcome or loading screens, or when not logged in
+    if (view === "welcome" || view === "loading") {
+      return;
+    }
+    const token = localStorage.getItem("fa_jwt_token");
+    if (!token) {
+      return;
+    }
+    if (isTokenExpired(token)) {
+      setShowTrialExpired(false);
+      logout();
+      if (!hasNotifiedSessionExpiredRef.current) {
+        hasNotifiedSessionExpiredRef.current = true;
+        notify("Your session has expired. Please sign in again.", "error");
+      }
+      return;
+    }
+
     const getTrialEndTimestamp = () => {
       const trialEndsStr = localStorage.getItem("fa_trial_ends_at");
       if (trialEndsStr) {
@@ -235,6 +290,18 @@ export function App() {
     let checkedBackend = false;
 
     const checkExpiration = async () => {
+      // 1. If session has expired, log user out directly and DO NOT show any dialog
+      const currentToken = localStorage.getItem("fa_jwt_token");
+      if (!currentToken || isTokenExpired(currentToken)) {
+        setShowTrialExpired(false);
+        logout();
+        if (!hasNotifiedSessionExpiredRef.current) {
+          hasNotifiedSessionExpiredRef.current = true;
+          notify("Your session has expired. Please sign in again.", "error");
+        }
+        return;
+      }
+
       const currentPlanNow = (user?.plan || localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan") || "").toLowerCase();
       const isPaid = currentPlanNow.includes("basic") || currentPlanNow.includes("standard") || currentPlanNow.includes("pro") || currentPlanNow.includes("enterprise");
 
@@ -283,12 +350,19 @@ export function App() {
               }
             }
           } catch (e) {
+            if (e.message && e.message.includes("Session expired")) {
+              setShowTrialExpired(false);
+              logout();
+              if (!hasNotifiedSessionExpiredRef.current) {
+                hasNotifiedSessionExpiredRef.current = true;
+                notify("Your session has expired. Please sign in again.", "error");
+              }
+              return;
+            }
             console.warn("Could not verify trial expiration with server:", e);
           }
         }
       } else if (!endTs) {
-        // If the user has an active session but no expiration timestamp, fetch it once from server
-        // or start the 2-minute countdown so expiration is always guaranteed.
         if (!checkedBackend && localStorage.getItem("fa_jwt_token")) {
           checkedBackend = true;
           try {
@@ -312,7 +386,7 @@ export function App() {
     checkExpiration();
     const interval = setInterval(checkExpiration, 1000);
     return () => clearInterval(interval);
-  }, [user?.plan, view]);
+  }, [user?.plan, view, logout, notify]);
 
   const handlePaymentSuccess = async (data = {}) => {
     let selectedPlan = data?.plan || orderRef.current?.name || order?.name || "Pro";
@@ -394,6 +468,7 @@ export function App() {
   }, []);
 
   const saveUser = async (profile) => {
+    hasNotifiedSessionExpiredRef.current = false;
     const next = {
       name: profile.name || profile.user?.name || "",
       email: profile.email || profile.user?.email || "",
@@ -487,24 +562,26 @@ export function App() {
     }
   };
 
-  const logout = () => {
-    [
-      "fa_user_name", "fa_user_email", "fa_plan", "fa_subscription_plan",
-      "fa_subscription_id", "fa_jwt_token", "fa_refresh_token",
-      "fa_erp_connected", "fa_erp_type", "fa_has_subscription",
-      "fa_trial_ends_at", "fa_trial_start"
-    ].forEach((key) => localStorage.removeItem(key));
-    setUser({});
-    setNotifications([]);
-    setShowTrialPopup(false);
-    setView("welcome");
-  };
-
   const content = useMemo(() => {
     if (view === "loading") return <Loading />;
     if (view === "welcome") return <Welcome busy={busy} onAuth={authenticate}/>;
     if (view === "trial") return <TrialSelect busy={busy} onTrial={startTrial} onPlans={() => setView("plans")}/>;
-    if (view === "plans") return <Plans user={user} onBack={() => setView(user?.plan ? "dashboard" : "welcome")} onSelect={(plan, price, cycle) => { setOrder({ ...plan, price, cycle }); setView("payment"); }}/>;
+    if (view === "plans") return (
+      <Plans
+        user={user}
+        onBack={() => setView(user?.plan ? "dashboard" : "welcome")}
+        onSelect={(plan, price, cycle) => {
+          const token = localStorage.getItem("fa_jwt_token");
+          if (!token || isTokenExpired(token)) {
+            logout();
+            notify("Your session has expired. Please sign in again.", "error");
+            return;
+          }
+          setOrder({ ...plan, price, cycle });
+          setView("payment");
+        }}
+      />
+    );
     if (view === "payment") return <Payment user={user} order={order} notify={notify} onBack={() => setView("plans")} onDone={handlePaymentSuccess}/>;
     if (view === "success") return <Success user={user} order={order} onContinue={() => setView("dashboard")} />;
     return (
@@ -522,7 +599,7 @@ export function App() {
         onTrialExpired={() => setShowTrialExpired(true)}
       />
     );
-  }, [view, user, busy, order, unreadCount, toggleDrawer]);
+  }, [view, user, busy, order, unreadCount, toggleDrawer, logout, notify]);
 
   return (
     <div className="app">
@@ -549,10 +626,18 @@ export function App() {
       {showTrialExpired && (
         <TrialExpiredModal
           onUpgrade={() => {
+            const token = localStorage.getItem("fa_jwt_token");
+            if (!token || isTokenExpired(token)) {
+              setShowTrialExpired(false);
+              logout();
+              notify("Your session has expired. Please sign in again.", "error");
+              return;
+            }
             setShowTrialExpired(false);
             setView("plans");
           }}
           onClose={() => setShowTrialExpired(false)}
+          onLogout={logout}
         />
       )}
       {content}

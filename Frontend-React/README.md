@@ -1,6 +1,6 @@
 # FinAccrual React Add-in
 
-This is an isolated React implementation of the Excel task-pane add-in. It runs on port `3001`, uses a distinct Office add-in ID, and leaves `../Frontend` and `../Backend` untouched.
+This is the official React implementation of the Excel task-pane add-in. It runs on port `3001` and uses a dedicated Office add-in ID.
 
 ## Run locally
 
@@ -10,7 +10,7 @@ npm run dev-server
 npm start
 ```
 
-Sideload `manifest.xml` if you prefer to register the add-in manually. The original add-in remains available on port `3000` with its original manifest.
+Sideload `manifest.xml` if you prefer to register the add-in manually.
 
 ## Build
 

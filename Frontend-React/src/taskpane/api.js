@@ -24,12 +24,41 @@ export function isTrustedOrigin(origin) {
   return false;
 }
 
+export function isTokenExpired(token) {
+  if (!token) return true;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return true;
+    const payloadStr = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(payloadStr);
+    if (!payload.exp) return false;
+    return (payload.exp * 1000) <= Date.now();
+  } catch (_) {
+    return true;
+  }
+}
+
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem("fa_jwt_token");
+  if (token && isTokenExpired(token)) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("fa_session_expired"));
+    }
+    throw new Error("Session expired. Please sign in again.");
+  }
+
   const headers = { ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const response = await fetch(path.startsWith("http") ? path : `${API_BASE}${path}`, { ...options, headers });
+
+  if (response.status === 401) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("fa_session_expired"));
+    }
+    throw new Error("Session expired. Please sign in again.");
+  }
+
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "Request failed.");
   return response;
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { API_BASE, apiFetch } from "../taskpane/api";
+import { API_BASE, apiFetch, isTokenExpired } from "../taskpane/api";
 import { Header } from "./ui";
 
 export function Payment({ user, order, onBack, onDone, notify }) {
@@ -8,13 +8,18 @@ export function Payment({ user, order, onBack, onDone, notify }) {
   const currentOrder = order || { name: "Pro", price: 1999, cycle: "monthly" };
 
   const proceed = () => {
+    const token = localStorage.getItem("fa_jwt_token") || "";
+    if (!token || isTokenExpired(token)) {
+      window.dispatchEvent(new CustomEvent("fa_session_expired"));
+      return;
+    }
     setBusy(true);
     const params = new URLSearchParams({
       plan: currentOrder.name,
       price: String(currentOrder.price),
       cycle: currentOrder.cycle,
       email: user.email || localStorage.getItem("fa_user_email") || "",
-      token: localStorage.getItem("fa_jwt_token") || "",
+      token,
     });
     const popup = window.open(
       `${API_BASE}/api/payments/checkout?${params}`,

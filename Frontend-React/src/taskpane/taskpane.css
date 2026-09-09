@@ -12,9 +12,29 @@
    ============================================================ */
 
 @import "./styles/base.css";
-@import "./styles/components.css";
-@import "./styles/dashboard.css";
-@import "./styles/modals.css";
+
+/* Shared UI Components */
+@import "./styles/components-auth.css";
+@import "./styles/components-plans.css";
+@import "./styles/components-checkout.css";
+
+/* Dashboard Layout & Features */
+@import "./styles/dashboard-legacy-view.css";
+@import "./styles/dashboard-legacy-controls.css";
+@import "./styles/dashboard-not-connected.css";
+@import "./styles/dashboard-connected-tabs.css";
+@import "./styles/dashboard-account-menu.css";
+@import "./styles/dashboard-fluent-header.css";
+@import "./styles/dashboard-fluent-companies.css";
+@import "./styles/dashboard-fluent-modals.css";
+
+/* Modals & Overlays */
+@import "./styles/modals-feedback.css";
+@import "./styles/modals-welcome-picker.css";
+@import "./styles/modals-trial-select.css";
+@import "./styles/modals-erp-redirect.css";
+
+/* Account Picker */
 @import "./styles/accountpicker.css";
 
 /* React welcome screen — matches the supplied FinAccrual Excel task pane. */

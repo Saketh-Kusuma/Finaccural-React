@@ -1,6 +1,20 @@
 import React from "react";
+import { isTokenExpired } from "../taskpane/api";
 
-export function TrialExpiredModal({ onUpgrade, onClose }) {
+export function TrialExpiredModal({ onUpgrade, onClose, onLogout }) {
+  const handleUpgrade = () => {
+    const token = localStorage.getItem("fa_jwt_token");
+    if (!token || isTokenExpired(token)) {
+      if (onLogout) {
+        onLogout();
+      } else if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("fa_session_expired"));
+      }
+      return;
+    }
+    if (onUpgrade) onUpgrade();
+  };
+
   return (
     <div
       className="fa-modal-overlay"
@@ -115,7 +129,7 @@ export function TrialExpiredModal({ onUpgrade, onClose }) {
         <button
           id="btnUpgradeNow"
           className="fa-btn-primary"
-          onClick={onUpgrade}
+          onClick={handleUpgrade}
           style={{
             width: "100%",
             padding: "10px 14px",
@@ -148,6 +162,27 @@ export function TrialExpiredModal({ onUpgrade, onClose }) {
         >
           Choose the plan that's right for you.
         </p>
+
+        {onLogout && (
+          <button
+            type="button"
+            id="btnSignOutTrialExpired"
+            onClick={onLogout}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#64748b",
+              fontSize: "12px",
+              textDecoration: "underline",
+              cursor: "pointer",
+              marginTop: "10px",
+              padding: "4px",
+              fontFamily: "inherit"
+            }}
+          >
+            Sign out / Switch account
+          </button>
+        )}
       </div>
     </div>
   );

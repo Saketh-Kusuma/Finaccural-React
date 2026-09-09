@@ -8,16 +8,16 @@ A full-stack ERP synchronization platform for accounting firms, integrating with
 
 ```
 fin-12.30/
-├── Admin/       — React 18 + TypeScript Admin Dashboard (Vite, Monolithic Context Store)
-├── Backend/     — Node.js / Express 5 API (SQLite, SSE Streaming, QuickBooks & Xero OAuth2)
-└── Frontend/    — Microsoft Excel Add-in (Office JS, Webpack, Streamed Synchronization)
+├── Admin/          — React 18 + TypeScript Admin Dashboard (Vite, Monolithic Context Store)
+├── Backend/        — Node.js / Express 5 API (SQLite, SSE Streaming, QuickBooks & Xero OAuth2)
+└── Frontend-React/ — Microsoft Excel Add-in (React 19, Office JS, Webpack, Streamed Synchronization)
 ```
 
 ---
 
 ##  Key Platform Features
 
-###  Excel Add-in (Frontend)
+###  Excel Add-in (Frontend-React)
 - **Streamed Master Data Synchronization**: Real-time Server-Sent Events (SSE) streaming (`/api/pull-master-data`) to populate Accounts, Classes, Locations, Customers, and Vendors directly into Excel.
 - **Incremental Refresh Schedule**:
   - Requires **Setup Master & Input Sheets** AND **Pull Master Data** steps to be completed before allowing execution.
@@ -52,11 +52,11 @@ npm install
 npm run dev                 # Starts API server on http://localhost:8000
 ```
 
-### 2. Excel Taskpane Add-in (`/Frontend`)
+### 2. Excel Taskpane Add-in (`/Frontend-React`)
 ```bash
-cd Frontend
+cd Frontend-React
 npm install
-npm run dev-server          # Starts Webpack dev server on https://localhost:3000
+npm run dev-server          # Starts Webpack dev server on https://localhost:3001
 npm run build               # Builds production bundle
 npm start                   # Sideloads Add-in inside Desktop Excel
 ```
