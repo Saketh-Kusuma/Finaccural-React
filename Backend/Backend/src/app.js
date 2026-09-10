@@ -87,13 +87,12 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        // true in production; also true in dev because server.js starts
-        // an HTTPS server when office-addin-dev-certs are present (required
-        // on macOS where Safari enforces strict mixed-content rules).
-        // Falls back automatically to false only when NODE_ENV is
-        // explicitly set to 'http-dev' (a local override for HTTP-only
-        // environments without TLS certs).
-        secure: process.env.NODE_ENV !== 'http-dev',
+        // server.js sets BACKEND_HTTPS='true' when it successfully loads
+        // office-addin-dev-certs (macOS) or when NODE_ENV=production.
+        // On Windows without certs the backend runs plain HTTP, so
+        // secure must be false — otherwise the browser drops the session
+        // cookie on the OAuth callback and the handler gets no session.
+        secure: process.env.BACKEND_HTTPS === 'true',
         maxAge: 1000 * 60 * 60 * 24 // 24 hours
     }
 }));

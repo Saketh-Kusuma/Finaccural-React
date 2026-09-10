@@ -10,7 +10,12 @@ async function getHttpsOptions() {
 
 module.exports = async (env, options) => {
   const isProduction = options.mode === "production";
-  const apiBase = process.env.API_BASE || (isProduction ? "" : "https://localhost:8000");
+  // macOS: backend runs HTTPS (office-addin-dev-certs) to satisfy Safari's
+  // mixed-content policy. Windows: backend stays HTTP — Edge WebView2 allows
+  // http://localhost from an HTTPS taskpane, and OAuth redirect URIs stay as-is.
+  const backendProtocol = process.platform === 'darwin' ? 'https' : 'http';
+  const apiBase = process.env.API_BASE || (isProduction ? "" : `${backendProtocol}://localhost:8000`);
+
 
 
   return {

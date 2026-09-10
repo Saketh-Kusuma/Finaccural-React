@@ -1,7 +1,14 @@
+// API_BASE is baked in by webpack (process.env.API_BASE).
+// • macOS: backend runs HTTPS (office-addin-dev-certs) → https://localhost:8000
+// • Windows: backend runs HTTP (Edge WebView2 allows http from HTTPS taskpane)
+//            → http://localhost:8000
+// The webpack.config.js picks the right default per platform at build time.
+// At runtime the window.__FINACCRUAL_CONFIG__.API_BASE override takes precedence
+// (useful for production deployments).
 export const API_BASE =
   (typeof process !== "undefined" && process.env && process.env.API_BASE) ||
   (typeof window !== "undefined" && window.__FINACCRUAL_CONFIG__ && window.__FINACCRUAL_CONFIG__.API_BASE) ||
-  "https://localhost:8000";
+  "http://localhost:8000";
 
 
 export function getBackendOrigin() {
