@@ -26,7 +26,13 @@ exports.validateXeroState = (req, res, next) => {
         return next(new ValidationError('Authorization code not received from Xero.'));
     }
 
-    if (state !== req.session.xero_state) {
+    const storedState = req.session?.xero_state || req.session?.oauth_state;
+
+    if (!storedState) {
+        return next(new ValidationError('Session expired. Please reconnect Xero.'));
+    }
+
+    if (state !== storedState) {
         return next(new ValidationError('Invalid OAuth state parameter.'));
     }
     next();

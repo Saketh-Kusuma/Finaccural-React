@@ -66,6 +66,7 @@ class XeroController {
 
         const state = generateOAuthState();
         req.session.oauth_state = state;
+        req.session.xero_state = state;
         req.session.user_id = userId;
         req.session.xero_tier = tier;
         req.session.xero_max_allowed = maxAllowed;
@@ -195,6 +196,8 @@ class XeroController {
         delete req.session.xero_pending_tenants;
         delete req.session.xero_pending_user_id;
         delete req.session.xero_reconnect_id;
+        delete req.session.xero_state;
+        delete req.session.oauth_state;
 
         return res.json({ success: true, connected: selectedTenantIds.length });
     });
