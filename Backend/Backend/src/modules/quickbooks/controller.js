@@ -1,40 +1,29 @@
 'use strict';
 
-const querystring  = require('querystring');
-const exceljs      = require('exceljs');
-const config       = require('../../core/config');
-const CONSTANTS    = require('../../core/constants');
+const querystring = require('querystring');
+const exceljs = require('exceljs');
+const config = require('../../core/config');
+const CONSTANTS = require('../../core/constants');
 const { generateOAuthState, renderOAuthBlockedPage } = require('../../core/helpers');
-const QuickBooksService    = require('./service');
+const QuickBooksService = require('./service');
 const QuickBooksTokenRepository = require('./repository');
-const { ValidationError } = require('../../core/errors/AppError');
+const { ValidationError, AppError } = require('../../core/errors/AppError');
 const asyncHandler = require('../../core/errors/asyncHandler');
 
 /**
  * QuickbooksController
  * -----------------------------------------------------------------
  * Handles all incoming HTTP requests for the QuickBooks module.
- * Delegates all business logic to QuickBooksService.
- * Handlers are wrapped in asyncHandler, which forwards any rejection to
- * next(err) — that is why they carry no try/catch of their own; the one
- * exception is quickbooksCallback, which needs to translate the failure
- * into a ValidationError before forwarding it.
- * Does NOT contain any data-transformation or mapping logic —
- * that responsibility lives in mapper.js (used by the Service).
+ * Delegates business logic and pagination to QuickBooksService.
+ * Handlers are wrapped in asyncHandler for centralized error handling.
  * -----------------------------------------------------------------
  */
 class QuickbooksController {
 
+    // ── OAuth Handlers ───────────────────────────────────────────────
+
     /**
      * GET /api/quickbooks/connect
-     * Generates the QuickBooks OAuth authorization URL and redirects.
-     *
-     * Requires authentication (the frontend passes the JWT as ?token=...
-     * since this is a browser navigation, not a fetch). The owning email
-     * is taken exclusively from the verified token (req.user.email), never
-     * from a client-suppliable query param — otherwise anyone could
-     * initiate a connect flow tagged with someone else's email and inject
-     * a connection into that other user's account.
      */
     connectQuickbooks = asyncHandler(async (req, res, next) => {
         const { QuickBooksToken } = require('../../core/database');
@@ -47,19 +36,9 @@ class QuickbooksController {
         else if (tier === 'basic') maxAllowed = 1;
         else if (tier === 'standard') maxAllowed = 3;
 
-        // The task pane appends ?reconnectId=<realmId> when the user
-        // clicked "Reconnect" on one specific disconnected company. That id
-        // is the user's declared intent for this entire round trip, so it is
-        // parked in the session here and compared in the callback against
-        // whatever realmId Intuit actually returns — the callback must never
-        // read it back off its own querystring, which the provider controls.
         const reconnectId = String(req.query.reconnectId || '').trim() || null;
 
         if (reconnectId) {
-            // An id that isn't one of this user's own companies means a
-            // stale task pane or a hand-edited URL. Refuse rather than
-            // quietly degrading into a normal "add company" flow, since
-            // that degradation is precisely the bypass this guards.
             const reconnectTarget = await QuickBooksToken.findOne({ where: { realm_id: reconnectId, user_id: userId } });
             if (!reconnectTarget) {
                 return res.send(renderOAuthBlockedPage({
@@ -71,10 +50,6 @@ class QuickbooksController {
                 }));
             }
         } else {
-            // Only a genuinely new connection is measured against the plan
-            // limit here. A reconnect re-authorizes a company that already
-            // occupies one of the plan's slots, so counting it would block
-            // the user from restoring a company they are entitled to.
             const whereClause = { status: { [Op.ne]: 'Disconnected' }, user_id: userId };
             const qbCount = await QuickBooksToken.count({ where: whereClause });
 
@@ -92,9 +67,6 @@ class QuickbooksController {
         const state = generateOAuthState();
         req.session.oauth_state = state;
         req.session.user_id = userId;
-        // Carried into the callback so the limit is re-checked against the
-        // tier the flow actually started with, rather than a ?tier= the
-        // client could swap mid-flight.
         req.session.qb_tier = tier;
         req.session.qb_max_allowed = maxAllowed;
         req.session.qb_reconnect_id = reconnectId;
@@ -113,27 +85,16 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/callback
-     * Handles the OAuth callback, exchanges code for tokens.
      */
     quickbooksCallback = async (req, res, next) => {
         try {
             const { code, realmId } = req.query;
             const userId = req.session?.user_id || req.session?.admin?.id || null;
 
-            // Both values come from the session, written by /connect — the
-            // tier so a client cannot widen its own limit halfway through
-            // the flow, the reconnect id so Intuit's callback querystring
-            // cannot claim an intent the user never expressed.
             const tier       = (req.session?.qb_tier || 'pro').toLowerCase();
             const maxAllowed = req.session?.qb_max_allowed || 10;
             const reconnectId = req.session?.qb_reconnect_id || null;
 
-            // Scenario 2 — strict reconnect validation.
-            // The user asked to restore one specific company; Intuit's
-            // account picker lets them authorize any company they own. If
-            // those disagree, saving the token would quietly add a NEW
-            // company under the guise of a reconnect, sidestepping the
-            // limit check that a normal "Add Company" flow would have run.
             if (reconnectId && String(realmId) !== String(reconnectId)) {
                 delete req.session.qb_reconnect_id;
                 return res.send(renderOAuthBlockedPage({
@@ -146,13 +107,6 @@ class QuickbooksController {
                 }));
             }
 
-            // Scenario 1 — lifetime company limit.
-            // Disconnecting sets status = 'Disconnected' but keeps the row,
-            // so counting every row this user has ever owned (minus the one
-            // being authorized right now, which may be an existing row) is
-            // what makes the limit a lifetime allowance rather than a
-            // concurrent one. Without it, disconnect -> connect a different
-            // company is an unlimited carousel on a 1-company plan.
             if (!reconnectId && userId) {
                 const { QuickBooksToken } = require('../../core/database');
                 const { Op } = require('sequelize');
@@ -184,7 +138,6 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/tokens
-     * Returns the authenticated user's own stored QuickBooks OAuth tokens.
      */
     listQuickbooksTokens = asyncHandler(async (req, res, next) => {
         const tokens = await QuickBooksTokenRepository.getAllTokens(req.user.userId || req.user.id);
@@ -192,8 +145,18 @@ class QuickbooksController {
     });
 
     /**
+     * POST /api/quickbooks/disconnect
+     */
+    disconnectQuickbooks = asyncHandler(async (req, res, next) => {
+        const userId = req.user.userId || req.user.id;
+        await QuickBooksTokenRepository.clearTokens(userId);
+        res.json({ success: true, message: 'QuickBooks tokens cleared successfully.' });
+    });
+
+    // ── Data Handlers ────────────────────────────────────────────────
+
+    /**
      * GET /api/quickbooks/customers
-     * Returns a list of mapped CustomerDTOs for the authenticated user's companies.
      */
     getCustomers = asyncHandler(async (req, res, next) => {
         const customers = await QuickBooksService.getCustomers(req.user.userId || req.user.id);
@@ -202,7 +165,6 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/vendors
-     * Returns a list of mapped VendorDTOs for the authenticated user's companies.
      */
     getVendors = asyncHandler(async (req, res, next) => {
         const vendors = await QuickBooksService.getVendors(req.user.userId || req.user.id);
@@ -211,7 +173,6 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/accounts
-     * Returns a list of mapped AccountDTOs for the authenticated user's companies.
      */
     getAccounts = asyncHandler(async (req, res, next) => {
         const accounts = await QuickBooksService.getAccounts(req.user.userId || req.user.id);
@@ -220,7 +181,6 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/classes
-     * Returns a list of mapped ClassDTOs for the authenticated user's companies.
      */
     getClasses = asyncHandler(async (req, res, next) => {
         const classes = await QuickBooksService.getClasses(req.user.userId || req.user.id);
@@ -229,7 +189,6 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/locations
-     * Returns a list of mapped LocationDTOs for the authenticated user's companies.
      */
     getLocations = asyncHandler(async (req, res, next) => {
         const locations = await QuickBooksService.getLocations(req.user.userId || req.user.id);
@@ -238,134 +197,28 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/company
-     * Returns company information DTO for the authenticated user's companies.
      */
     getCompanyInfo = asyncHandler(async (req, res, next) => {
-        const company = await QuickBooksService.getCompanyInfo(undefined, req.user.userId || req.user.id);
+        const userId = req.user.userId || req.user.id;
+        const company = await QuickBooksService.getCompanyInfo(undefined, userId);
+        if (!company) {
+            throw new AppError(
+                'The requested resource was not found.',
+                404,
+                'ERR_NOT_FOUND',
+                'No active QuickBooks company found. Please connect QuickBooks first.'
+            );
+        }
         res.json({ company });
     });
 
     /**
      * GET /api/quickbooks/export
-     * Exports company, customers, vendors, accounts, classes, and locations
-     * as an Excel file, scoped to the authenticated user's companies.
-     *
-     * Fetches in 1000-record batches per entity instead of one big
-     * unpaginated call per entity. Each batch still fires every entity's
-     * API concurrently via Promise.all — same shape as the original
-     * single-shot Promise.all below, just repeated batch-by-batch — so
-     * customers/vendors/accounts/classes/locations all pull records
-     * 1–10 together, then 11–20 together, and so on, until every one of
-     * them has exhausted every connected company's data. Company info
-     * isn't paginated (one record per company) and is fetched once,
-     * up front, alongside a token→orgName lookup so the per-batch entity
-     * fetches don't each need their own CompanyInfo round trip.
      */
     exportMasterData = asyncHandler(async (req, res, next) => {
         const userId = req.user.userId || req.user.id;
-        const BATCH_SIZE = 1000;
-
-        const { tokens: allTokens, company, orgNameByTokenId } =
-            await QuickBooksService.getCompanyInfoAndOrgNames(userId)
-                .catch(() => ({ tokens: [], company: null, orgNameByTokenId: new Map() }));
-
-        // Per-entity list of tokens still known to have more pages —
-        // shrinks independently as each token/company reports its
-        // last (short) page, so a company with fewer records simply
-        // stops being queried for that entity while others with more
-        // data keep going. No two entities share a list, since one
-        // entity finishing early for a company must not affect the
-        // others' pagination.
-        let customersTokens = allTokens.slice();
-        let vendorsTokens   = allTokens.slice();
-        let accountsTokens  = allTokens.slice();
-        let classesTokens   = allTokens.slice();
-        let locationsTokens = allTokens.slice();
-
-        const customers = [];
-        const vendors   = [];
-        const accounts  = [];
-        const classes   = [];
-        const locations = [];
-
-        const dropExhausted = (list, exhaustedIds) =>
-            list.filter(t => !exhaustedIds.has(t.companyId || t.realm_id));
-        const allTokenIds = (list) => new Set(list.map(t => t.companyId || t.realm_id));
-        const emptyPage = () => ({ records: [], exhaustedTokenIds: new Set() });
-
-        let startPosition = 1;
-        let batchCount = 0;
-        // Safety valve only — each entity's token list can only
-        // shrink every iteration, so the loop is guaranteed to end
-        // long before this; it just guards against an infinite loop
-        // if that invariant is ever broken by a future change.
-        const MAX_BATCHES = 100000;
-
-        while (
-            (customersTokens.length || vendorsTokens.length || accountsTokens.length ||
-             classesTokens.length || locationsTokens.length) &&
-            batchCount < MAX_BATCHES
-        ) {
-            batchCount += 1;
-            const batchStartedAt = Date.now();
-
-            // ── TEMPORARY diagnostic logging ─────────────────────
-            // Logged synchronously for every still-active entity
-            // BEFORE the Promise.all below is even constructed, so
-            // all of a batch's START lines print together as one
-            // group regardless of how long each entity's HTTP
-            // response actually takes.
-            if (customersTokens.length) console.log(`[BATCH ${batchCount}][Customers] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (vendorsTokens.length) console.log(`[BATCH ${batchCount}][Vendors] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (accountsTokens.length) console.log(`[BATCH ${batchCount}][Accounts] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (classesTokens.length) console.log(`[BATCH ${batchCount}][Classes] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (locationsTokens.length) console.log(`[BATCH ${batchCount}][Locations] START position=${startPosition} limit=${BATCH_SIZE}`);
-
-            // All 5 entity APIs for this batch run together — nothing
-            // here waits for another to finish first.
-            const [customersResult, vendorsResult, accountsResult, classesResult, locationsResult] = await Promise.all([
-                customersTokens.length
-                    ? QuickBooksService.getCustomersPage(customersTokens, startPosition, BATCH_SIZE, orgNameByTokenId)
-                        .catch(() => ({ records: [], exhaustedTokenIds: allTokenIds(customersTokens) }))
-                    : Promise.resolve(emptyPage()),
-                vendorsTokens.length
-                    ? QuickBooksService.getVendorsPage(vendorsTokens, startPosition, BATCH_SIZE, orgNameByTokenId)
-                        .catch(() => ({ records: [], exhaustedTokenIds: allTokenIds(vendorsTokens) }))
-                    : Promise.resolve(emptyPage()),
-                accountsTokens.length
-                    ? QuickBooksService.getAccountsPage(accountsTokens, startPosition, BATCH_SIZE, orgNameByTokenId)
-                        .catch(() => ({ records: [], exhaustedTokenIds: allTokenIds(accountsTokens) }))
-                    : Promise.resolve(emptyPage()),
-                classesTokens.length
-                    ? QuickBooksService.getClassesPage(classesTokens, startPosition, BATCH_SIZE, orgNameByTokenId)
-                        .catch(() => ({ records: [], exhaustedTokenIds: allTokenIds(classesTokens) }))
-                    : Promise.resolve(emptyPage()),
-                locationsTokens.length
-                    ? QuickBooksService.getLocationsPage(locationsTokens, startPosition, BATCH_SIZE, orgNameByTokenId)
-                        .catch(() => ({ records: [], exhaustedTokenIds: allTokenIds(locationsTokens) }))
-                    : Promise.resolve(emptyPage())
-            ]);
-
-            console.log(`[BATCH ${batchCount}][Customers] RESPONSE count=${customersResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Vendors] RESPONSE count=${vendorsResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Accounts] RESPONSE count=${accountsResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Classes] RESPONSE count=${classesResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Locations] RESPONSE count=${locationsResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-
-            customers.push(...customersResult.records);
-            vendors.push(...vendorsResult.records);
-            accounts.push(...accountsResult.records);
-            classes.push(...classesResult.records);
-            locations.push(...locationsResult.records);
-
-            customersTokens = dropExhausted(customersTokens, customersResult.exhaustedTokenIds);
-            vendorsTokens   = dropExhausted(vendorsTokens, vendorsResult.exhaustedTokenIds);
-            accountsTokens  = dropExhausted(accountsTokens, accountsResult.exhaustedTokenIds);
-            classesTokens   = dropExhausted(classesTokens, classesResult.exhaustedTokenIds);
-            locationsTokens = dropExhausted(locationsTokens, locationsResult.exhaustedTokenIds);
-
-            startPosition += BATCH_SIZE;
-        }
+        const { company, customers, vendors, accounts, classes, locations } =
+            await QuickBooksService.exportMasterDataBatch(userId);
 
         const wb = new exceljs.Workbook();
 
@@ -402,15 +255,7 @@ class QuickbooksController {
         res.end();
     });
 
-    /**
-     * POST /api/quickbooks/disconnect
-     * Clears the authenticated user's own stored QuickBooks tokens only.
-     */
-    disconnectQuickbooks = asyncHandler(async (req, res, next) => {
-        const userId = req.user.userId || req.user.id;
-        await QuickBooksTokenRepository.clearTokens(userId);
-        res.json({ success: true, message: 'QuickBooks tokens cleared successfully.' });
-    });
+    // ── Connection Handlers ──────────────────────────────────────────
 
     /**
      * GET /api/quickbooks/connections
@@ -493,35 +338,7 @@ class QuickbooksController {
     });
 
     /**
-     * GET /api/quickbooks/pull-master-data?companyId=...&tier=...&cursor=...
-     *
-     * `cursor` (optional) is the JSON-encoded per-company, per-entity
-     * pagination cursor returned as `cursor` in a PREVIOUS call's
-     * response body. Omitting it (or sending {}) starts a fresh cycle at
-     * Accounts, position 1.
-     *
-     * Each call fetches exactly ONE page (up to 100 records) for exactly
-     * ONE entity — the entities are processed sequentially, in the order
-     * Accounts -> Classes -> Locations -> Customers -> Vendors, and an
-     * entity is drained completely before the next one starts (from its
-     * own first record). So on any given call four of the five record
-     * arrays in the response are empty, and no two APIs are ever fetched
-     * at the same time. See QuickBooksService.pullMasterData /
-     * _fetchOnePageForToken.
-     *
-     * A single button click therefore never silently pulls more than one
-     * batch; the caller must send the returned `cursor` back on its next
-     * click to continue, and `isDone: true` means every entity is
-     * exhausted and there is nothing left to fetch until the cycle is
-     * reset.
-     */
-    /**
      * GET /api/quickbooks/pull-master-data?companyId=...&tier=...&stream=...
-     *
-     * Single-Click Auto-Pull Master Data Endpoint.
-     * Fetches 100% of data across all entities (Accounts, Classes, Locations, Customers, Vendors)
-     * using multithreaded async worker streams and auto-tuned pagination in a single request lifecycle.
-     * Includes HTTP Keep-Alive stream pings to prevent proxy timeouts.
      */
     pullMasterData = asyncHandler(async (req, res, next) => {
         const { companyId, tier, mode, stream } = req.query;
@@ -559,7 +376,6 @@ class QuickbooksController {
         const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, null, isIncremental);
 
         if (!aggregated) {
-            const { AppError } = require('../../core/errors/AppError');
             throw new AppError('The requested resource was not found.', 404, 'ERR_NOT_FOUND', `No active connections found for quickbooks.`);
         }
 
@@ -577,9 +393,6 @@ class QuickbooksController {
 
     /**
      * GET /api/quickbooks/refresh-incremental?companyId=...&tier=...
-     *
-     * Incremental Refresh Endpoint.
-     * Fetches ONLY modified or newly added records since the last sync timestamp (`MetaData.LastUpdatedTime`).
      */
     refreshIncremental = asyncHandler(async (req, res, next) => {
         const { companyId, tier } = req.query;
@@ -587,7 +400,6 @@ class QuickbooksController {
         const aggregated = await QuickBooksService.pullMasterDataMultithreaded(companyId, tier, userId, null, true);
 
         if (!aggregated) {
-            const { AppError } = require('../../core/errors/AppError');
             throw new AppError('No active connection found for refresh.', 404, 'ERR_NOT_FOUND', 'QuickBooks connection not found.');
         }
 
