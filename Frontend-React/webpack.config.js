@@ -10,7 +10,7 @@ async function getHttpsOptions() {
 
 module.exports = async (env, options) => {
   const isProduction = options.mode === "production";
-  const apiBase = process.env.API_BASE || "";
+  const apiBase = process.env.API_BASE || (isProduction ? "" : "http://localhost:8000");
 
   return {
     devtool: isProduction ? "source-map" : "eval-source-map",
@@ -54,15 +54,7 @@ module.exports = async (env, options) => {
     devServer: {
       headers: { "Access-Control-Allow-Origin": "*" },
       server: { type: "https", options: env.WEBPACK_BUILD || options.https !== undefined ? options.https : await getHttpsOptions() },
-      port: 3001,
-      proxy: [
-        {
-          context: ["/api"],
-          target: process.env.BACKEND_URL || "http://localhost:8000",
-          secure: false,
-          changeOrigin: true
-        }
-      ]
+      port: 3001
     }
   };
 };

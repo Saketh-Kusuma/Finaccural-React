@@ -1,11 +1,11 @@
 export const API_BASE =
   (typeof process !== "undefined" && process.env && process.env.API_BASE) ||
   (typeof window !== "undefined" && window.__FINACCRUAL_CONFIG__ && window.__FINACCRUAL_CONFIG__.API_BASE) ||
-  "";
+  "http://localhost:8000";
 
 export function getBackendOrigin() {
   try {
-    return new URL(API_BASE || (typeof window !== "undefined" ? window.location.origin : ""), window.location.href).origin;
+    return new URL(API_BASE, window.location.href).origin;
   } catch (_) {
     return "";
   }
@@ -50,10 +50,7 @@ export async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const targetUrl = path.startsWith("http")
-    ? path
-    : (API_BASE ? `${API_BASE}${path}` : path);
-  const response = await fetch(targetUrl, { ...options, headers });
+  const response = await fetch(path.startsWith("http") ? path : `${API_BASE}${path}`, { ...options, headers });
 
   if (response.status === 401) {
     let errJson = null;
@@ -79,8 +76,7 @@ export async function apiFetch(path, options = {}) {
 }
 
 export function openAuth(provider, onProfile, loginHint) {
-  const base = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
-  let url = `${base}/api/${provider === "google" ? "auth/google" : "microsoft"}/connect`;
+  let url = `${API_BASE}/api/${provider === "google" ? "auth/google" : "microsoft"}/connect`;
   if (loginHint) url += `?login_hint=${encodeURIComponent(loginHint)}`;
   const popup = window.open(url, `fa_${provider}_auth`, "width=520,height=640,resizable=yes,scrollbars=yes");
   if (!popup) throw new Error("The sign-in window was blocked. Please allow popups and try again.");
@@ -96,7 +92,6 @@ export function openAuth(provider, onProfile, loginHint) {
 }
 
 export function openErp(provider, user, reconnectId = null) {
-  const base = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
   const path = provider === "quickbooks" ? "/api/quickbooks/connect" : "/api/xero/connect";
   const queryObj = {
     tier: user.plan || "",
@@ -110,7 +105,7 @@ export function openErp(provider, user, reconnectId = null) {
     }
   }
   const params = new URLSearchParams(queryObj);
-  return window.open(`${base}${path}?${params.toString()}`, `fa_${provider}_auth`, "width=800,height=600,resizable=yes,scrollbars=yes");
+  return window.open(`${API_BASE}${path}?${params.toString()}`, `fa_${provider}_auth`, "width=800,height=600,resizable=yes,scrollbars=yes");
 }
 
 export function openTrialSelectDialog(onAction) {
