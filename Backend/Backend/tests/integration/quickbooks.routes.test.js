@@ -66,6 +66,44 @@ describe('QuickBooks Routes Integration', () => {
         });
     });
 
+    describe('GET /api/pull-master-data', () => {
+        it('should return master data as JSON when streaming is not requested', async () => {
+            const mockAggregated = {
+                company: [{ id: '123', name: 'Test Co' }],
+                customers: [],
+                vendors: [],
+                accounts: [],
+                classes: [],
+                locations: [],
+                isFirstSync: true
+            };
+            QuickBooksService.pullMasterDataMultithreaded = jest.fn().mockResolvedValue(mockAggregated);
+
+            const res = await request(app).get('/api/pull-master-data?companyId=123&platform=quickbooks&tier=basic');
+            expect(res.status).toBe(200);
+            expect(res.body.company).toEqual(mockAggregated.company[0]);
+            expect(res.headers['content-type']).toContain('application/json');
+        });
+
+        it('should send appropriate SSE headers including X-Accel-Buffering: no when stream=true', async () => {
+            const mockAggregated = {
+                company: [{ id: '123', name: 'Test Co' }],
+                customers: [],
+                vendors: [],
+                accounts: [],
+                classes: [],
+                locations: [],
+                isFirstSync: true
+            };
+            QuickBooksService.pullMasterDataMultithreaded = jest.fn().mockResolvedValue(mockAggregated);
+
+            const res = await request(app).get('/api/pull-master-data?companyId=123&platform=quickbooks&tier=basic&stream=true');
+            expect(res.status).toBe(200);
+            expect(res.headers['content-type']).toContain('text/event-stream');
+            expect(res.headers['x-accel-buffering']).toBe('no');
+        });
+    });
+
     afterAll(async () => {
         const { sequelize } = require('../../src/core/database');
         await sequelize.close();

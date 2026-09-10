@@ -87,7 +87,7 @@ export const ExcelSheetSetup = {
       headerRange.format.rowHeight = 28;
       headerRange.format.font.size = 11;
       headerRange.format.wrapText = true;
-      masterSheet.getRange("A:AB").format.columnWidth = 115;
+      masterSheet.getRange("A1:AB1").format.columnWidth = 115;
 
       masterSheet.freezePanes.unfreeze();
       masterSheet.getRange("A2").select();

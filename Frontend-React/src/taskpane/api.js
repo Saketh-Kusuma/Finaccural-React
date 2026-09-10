@@ -169,6 +169,18 @@ function openTrialPopupFallback(url, onAction) {
   window.addEventListener("message", receive);
 }
 
+async function fetchMasterDataFallback(provider, companyId, tier, mode = "") {
+  const query = {
+    companyId: companyId || "",
+    platform: provider || "",
+    tier: tier || ""
+  };
+  if (mode) query.mode = mode;
+  const params = new URLSearchParams(query);
+  const response = await apiFetch(`/api/pull-master-data?${params.toString()}`, { method: "GET" });
+  return await response.json();
+}
+
 export async function fetchMasterDataStream(provider, companyId, tier, onProgress) {
   const params = new URLSearchParams({
     companyId: companyId || "",
@@ -177,41 +189,56 @@ export async function fetchMasterDataStream(provider, companyId, tier, onProgres
     stream: "true"
   });
 
-  const response = await apiFetch(`/api/pull-master-data?${params.toString()}`, { method: "GET" });
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finalData = null;
+  try {
+    const response = await apiFetch(`/api/pull-master-data?${params.toString()}`, {
+      method: "GET",
+      headers: { Accept: "text/event-stream" }
+    });
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    if (!response.body || typeof response.body.getReader !== "function") {
+      console.warn("ReadableStream not supported on response body, falling back to JSON pull.");
+      return await fetchMasterDataFallback(provider, companyId, tier);
+    }
 
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalData = null;
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const payload = JSON.parse(line.replace("data: ", "").trim());
-          if (payload.type === "progress" && typeof onProgress === "function") {
-            onProgress(payload);
-          } else if (payload.type === "start" && typeof onProgress === "function") {
-            onProgress(payload);
-          } else if (payload.type === "complete") {
-            finalData = payload.data;
-          } else if (payload.type === "error") {
-            throw new Error(payload.error || "Data sync error");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const payload = JSON.parse(line.replace("data: ", "").trim());
+            if (payload.type === "progress" && typeof onProgress === "function") {
+              onProgress(payload);
+            } else if (payload.type === "start" && typeof onProgress === "function") {
+              onProgress(payload);
+            } else if (payload.type === "complete") {
+              finalData = payload.data;
+            } else if (payload.type === "error") {
+              throw new Error(payload.error || "Data sync error");
+            }
+          } catch (pErr) {
+            if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;
           }
-        } catch (pErr) {
-          if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;
         }
       }
     }
-  }
 
-  return finalData;
+    if (finalData) return finalData;
+    return await fetchMasterDataFallback(provider, companyId, tier);
+  } catch (err) {
+    console.warn("Stream pull encountered an error, falling back to standard JSON pull:", err);
+    return await fetchMasterDataFallback(provider, companyId, tier);
+  }
 }
 
 export async function fetchIncrementalDataStream(provider, companyId, tier, onProgress) {
@@ -223,40 +250,56 @@ export async function fetchIncrementalDataStream(provider, companyId, tier, onPr
     mode: "incremental"
   });
 
-  const response = await apiFetch(`/api/pull-master-data?${params.toString()}`, { method: "GET" });
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let finalData = null;
+  try {
+    const response = await apiFetch(`/api/pull-master-data?${params.toString()}`, {
+      method: "GET",
+      headers: { Accept: "text/event-stream" }
+    });
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    if (!response.body || typeof response.body.getReader !== "function") {
+      console.warn("ReadableStream not supported on response body, falling back to JSON incremental pull.");
+      return await fetchMasterDataFallback(provider, companyId, tier, "incremental");
+    }
 
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalData = null;
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const payload = JSON.parse(line.replace("data: ", "").trim());
-          if (payload.type === "progress" && typeof onProgress === "function") {
-            onProgress(payload);
-          } else if (payload.type === "start" && typeof onProgress === "function") {
-            onProgress(payload);
-          } else if (payload.type === "complete") {
-            finalData = payload.data;
-          } else if (payload.type === "error") {
-            throw new Error(payload.error || "Incremental sync error");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const payload = JSON.parse(line.replace("data: ", "").trim());
+            if (payload.type === "progress" && typeof onProgress === "function") {
+              onProgress(payload);
+            } else if (payload.type === "start" && typeof onProgress === "function") {
+              onProgress(payload);
+            } else if (payload.type === "complete") {
+              finalData = payload.data;
+            } else if (payload.type === "error") {
+              throw new Error(payload.error || "Incremental sync error");
+            }
+          } catch (pErr) {
+            if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;
           }
-        } catch (pErr) {
-          if (pErr.message && !pErr.message.includes("Unexpected token")) throw pErr;
         }
       }
     }
-  }
 
-  return finalData;
+    if (finalData) return finalData;
+    return await fetchMasterDataFallback(provider, companyId, tier, "incremental");
+  } catch (err) {
+    console.warn("Stream incremental pull encountered an error, falling back to standard JSON pull:", err);
+    return await fetchMasterDataFallback(provider, companyId, tier, "incremental");
+  }
 }
+
 

@@ -321,10 +321,14 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
  
         if (req.headers.accept?.includes('text/event-stream') || req.query.stream === 'true') {
             res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
             res.setHeader('Connection', 'keep-alive');
             res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('X-Accel-Buffering', 'no');
             res.status(200);
+            if (typeof res.flushHeaders === 'function') {
+                res.flushHeaders();
+            }
 
             const heartbeatInterval = setInterval(() => {
                 res.write(': heartbeat ping\n\n');

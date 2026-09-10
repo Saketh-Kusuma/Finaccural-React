@@ -27,12 +27,18 @@ const ExcelService = {
     await Excel.run(async (context) => {
       const sheet = context.workbook.worksheets.getItem("1.Master_Data");
       const usedRange = sheet.getUsedRangeOrNullObject();
-      usedRange.load(["rowCount", "isNullObject"]);
+      usedRange.load("isNullObject");
       await context.sync();
 
-      if (!usedRange.isNullObject && usedRange.rowCount > 1) {
-        const clearRowCount = Math.max(usedRange.rowCount, 500);
-        sheet.getRange(`A2:AB${clearRowCount + 50}`).clear("All");
+      if (!usedRange.isNullObject) {
+        usedRange.load("rowCount");
+        await context.sync();
+        if (usedRange.rowCount > 1) {
+          const clearRowCount = Math.max(usedRange.rowCount, 500);
+          sheet.getRange(`A2:AB${clearRowCount + 50}`).clear("All");
+        } else {
+          sheet.getRange("A2:AB100").clear("All");
+        }
       } else {
         sheet.getRange("A2:AB100").clear("All");
       }
@@ -194,7 +200,7 @@ const ExcelService = {
       const dataRange = sheet.getRange(`A2:AB${formatEndRow}`);
       dataRange.format.font.size = 11;
       dataRange.format.wrapText = true;
-      sheet.getRange("A:AB").format.columnWidth = 115;
+      sheet.getRange("A1:AB1").format.columnWidth = 115;
 
       await context.sync();
     });

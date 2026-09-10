@@ -13,12 +13,18 @@ export const ExcelBatchAppender = {
       if (sheet.isNullObject) return;
 
       const used = sheet.getUsedRangeOrNullObject();
-      used.load(["rowCount", "isNullObject"]);
+      used.load("isNullObject");
       await context.sync();
 
-      if (!used.isNullObject && used.rowCount > 1) {
-        const clearRowCount = Math.max(used.rowCount, 500);
-        sheet.getRange(`A2:AB${clearRowCount + 50}`).clear("All");
+      if (!used.isNullObject) {
+        used.load("rowCount");
+        await context.sync();
+        if (used.rowCount > 1) {
+          const clearRowCount = Math.max(used.rowCount, 500);
+          sheet.getRange(`A2:AB${clearRowCount + 50}`).clear("All");
+        } else {
+          sheet.getRange("A2:AB100").clear("All");
+        }
       } else {
         sheet.getRange("A2:AB100").clear("All");
       }
@@ -84,15 +90,15 @@ export const ExcelBatchAppender = {
       };
 
       const overallUsed = sheet.getUsedRangeOrNullObject();
-      overallUsed.load(["rowCount", "isNullObject"]);
+      overallUsed.load("isNullObject");
       await context.sync();
-      const scanLimit = (!overallUsed.isNullObject && overallUsed.rowCount > 1) ? Math.max(overallUsed.rowCount + 500, 2000) : 2000;
-
-      const usedByBlock = {};
-      for (const [key, { first, last }] of Object.entries(BLOCKS)) {
-        const used = sheet.getRange(`${first}2:${last}${scanLimit}`).getUsedRangeOrNullObject();
-        used.load(["rowIndex", "rowCount", "isNullObject"]);
-        usedByBlock[key] = used;
+      let scanLimit = 2000;
+      if (!overallUsed.isNullObject) {
+        overallUsed.load("rowCount");
+        await context.sync();
+        if (overallUsed.rowCount > 1) {
+          scanLimit = Math.max(overallUsed.rowCount + 500, 2000);
+        }
       }
 
       const existingOrgColumn = sheet.getRange(`A2:A${scanLimit}`);
@@ -121,13 +127,24 @@ export const ExcelBatchAppender = {
       const seenLocationIds = extractIds(existingLocationsIdRange);
       const seenEntityIds = extractIds(existingEntitiesIdRange);
 
-      const nextRowFor = (key) => {
-        const used = usedByBlock[key];
-        return used.isNullObject ? 2 : used.rowIndex + used.rowCount + 1;
+      const findNextRow = (range) => {
+        const rows = range.values || [];
+        for (let i = rows.length - 1; i >= 0; i--) {
+          const val = rows[i] ? rows[i][0] : null;
+          if (val !== null && val !== undefined && String(val).trim() !== "") {
+            return i + 2 + 1;
+          }
+        }
+        return 2;
       };
 
-      const rowFor = {};
-      for (const key of Object.keys(BLOCKS)) rowFor[key] = nextRowFor(key);
+      const rowFor = {
+        company: findNextRow(existingOrgColumn),
+        accounts: findNextRow(existingAccountsIdRange),
+        classes: findNextRow(existingClassesIdRange),
+        locations: findNextRow(existingLocationsIdRange),
+        entities: findNextRow(existingEntitiesIdRange)
+      };
 
       const seenOrgNames = new Set(
         (existingOrgColumn.values || [])
@@ -142,7 +159,11 @@ export const ExcelBatchAppender = {
         const { first, last } = BLOCKS[key];
         const startRow = rowFor[key];
 
-        await writeRowsInBatches(context, sheet, first, last, startRow, values, values.map(() => false));
+        const sanitized = values.map((row) =>
+          row.map((cell) => (cell == null ? "" : cell))
+        );
+
+        await writeRowsInBatches(context, sheet, first, last, startRow, sanitized, sanitized.map(() => false));
 
         const written = sheet.getRange(`${first}${startRow}:${last}${startRow + values.length - 1}`);
         written.format.font.size = 11;
@@ -225,7 +246,7 @@ export const ExcelBatchAppender = {
         ]));
       }
 
-      sheet.getRange("A:AB").format.columnWidth = 115;
+      sheet.getRange("A1:AB1").format.columnWidth = 115;
       await context.sync();
       return totalWrittenRecords;
     });
