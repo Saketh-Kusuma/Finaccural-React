@@ -46,12 +46,12 @@ module.exports = {
     GOOGLE: {
         CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
         CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-        REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:8000/api/auth/google/callback'
+        REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'https://localhost:8000/api/auth/google/callback'
     },
     MICROSOFT: {
         CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
         CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
-        REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI || 'http://localhost:8000/api/microsoft/callback',
+        REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI || 'https://localhost:8000/api/microsoft/callback',
         // Azure AD tenant scope: a GUID for a single tenant, or 'common' / 'organizations' / 'consumers'.
         TENANT_ID: process.env.MICROSOFT_TENANT_ID || 'consumers',
         SCOPES: process.env.MICROSOFT_SCOPES || 'openid profile email User.Read offline_access'

@@ -1,7 +1,8 @@
 export const API_BASE =
   (typeof process !== "undefined" && process.env && process.env.API_BASE) ||
   (typeof window !== "undefined" && window.__FINACCRUAL_CONFIG__ && window.__FINACCRUAL_CONFIG__.API_BASE) ||
-  "http://localhost:8000";
+  "https://localhost:8000";
+
 
 export function getBackendOrigin() {
   try {

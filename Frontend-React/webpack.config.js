@@ -10,7 +10,8 @@ async function getHttpsOptions() {
 
 module.exports = async (env, options) => {
   const isProduction = options.mode === "production";
-  const apiBase = process.env.API_BASE || (isProduction ? "" : "http://localhost:8000");
+  const apiBase = process.env.API_BASE || (isProduction ? "" : "https://localhost:8000");
+
 
   return {
     devtool: isProduction ? "source-map" : "eval-source-map",

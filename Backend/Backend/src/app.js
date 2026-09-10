@@ -87,7 +87,13 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        // true in production; also true in dev because server.js starts
+        // an HTTPS server when office-addin-dev-certs are present (required
+        // on macOS where Safari enforces strict mixed-content rules).
+        // Falls back automatically to false only when NODE_ENV is
+        // explicitly set to 'http-dev' (a local override for HTTP-only
+        // environments without TLS certs).
+        secure: process.env.NODE_ENV !== 'http-dev',
         maxAge: 1000 * 60 * 60 * 24 // 24 hours
     }
 }));
