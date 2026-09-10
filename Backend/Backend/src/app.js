@@ -46,7 +46,12 @@ app.use(helmet({
 }));
 
 
-app.use(cors());
+app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
+}));
 
 
 // Header Validation — reject a JSON POST/PUT/PATCH whose Content-Type

@@ -329,6 +329,7 @@ router.get('/pull-master-data', authenticate, validate(schemas.pullMasterDataQue
             if (typeof res.flushHeaders === 'function') {
                 res.flushHeaders();
             }
+            res.write(': sse-ready\n\n');
 
             const heartbeatInterval = setInterval(() => {
                 res.write(': heartbeat ping\n\n');

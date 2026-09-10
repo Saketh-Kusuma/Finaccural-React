@@ -10,7 +10,7 @@ async function getHttpsOptions() {
 
 module.exports = async (env, options) => {
   const isProduction = options.mode === "production";
-  const apiBase = process.env.API_BASE || (isProduction ? "" : "http://localhost:8000");
+  const apiBase = process.env.API_BASE || "";
 
   return {
     devtool: isProduction ? "source-map" : "eval-source-map",
@@ -40,9 +40,9 @@ module.exports = async (env, options) => {
         "process.env.API_BASE": JSON.stringify(apiBase),
         "process.env.NODE_ENV": JSON.stringify(options.mode || "development")
       }),
-      new HtmlWebpackPlugin({ filename: "taskpane.html", template: "./src/taskpane/index.html", chunks: ["polyfill", "taskpane"] }),
-      new HtmlWebpackPlugin({ filename: "commands.html", template: "./src/commands/commands.html", chunks: ["polyfill", "commands"] }),
-      new HtmlWebpackPlugin({ filename: "trialselect.html", template: "./src/taskpane/trialselect.html", chunks: ["polyfill"] }),
+      new HtmlWebpackPlugin({ filename: "taskpane.html", template: "./src/taskpane/index.html", chunks: ["polyfill", "taskpane"], hash: true }),
+      new HtmlWebpackPlugin({ filename: "commands.html", template: "./src/commands/commands.html", chunks: ["polyfill", "commands"], hash: true }),
+      new HtmlWebpackPlugin({ filename: "trialselect.html", template: "./src/taskpane/trialselect.html", chunks: ["polyfill"], hash: true }),
       new CopyWebpackPlugin({ patterns: [
         { from: "assets/*", to: "assets/[name][ext][query]" },
         { from: "src/taskpane/taskpane.css", to: "taskpane.css" },
@@ -54,7 +54,15 @@ module.exports = async (env, options) => {
     devServer: {
       headers: { "Access-Control-Allow-Origin": "*" },
       server: { type: "https", options: env.WEBPACK_BUILD || options.https !== undefined ? options.https : await getHttpsOptions() },
-      port: 3001
+      port: 3001,
+      proxy: [
+        {
+          context: ["/api"],
+          target: process.env.BACKEND_URL || "http://localhost:8000",
+          secure: false,
+          changeOrigin: true
+        }
+      ]
     }
   };
 };
