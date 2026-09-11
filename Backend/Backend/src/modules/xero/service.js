@@ -108,6 +108,14 @@ class XeroService {
     static async pullMasterData(companyId, tier, userId, isIncremental = false) {
         return XeroConnectionService.pullMasterData(companyId, tier, userId, isIncremental);
     }
+
+    /**
+     * Batched sync with onProgress callback — used by the SSE streaming controller.
+     * Mirrors QuickBooksService.pullMasterDataMultithreaded signature.
+     */
+    static async pullMasterDataBatched(companyId, tier, userId, onProgress = null, isIncremental = false) {
+        return XeroConnectionService.pullMasterDataBatched(companyId, tier, userId, onProgress, isIncremental);
+    }
 }
 
 // Plan downgrade listener

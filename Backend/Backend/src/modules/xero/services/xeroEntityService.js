@@ -61,6 +61,47 @@ class XeroEntityService {
     }
 
     /**
+     * Shared implementation behind getContactsPage.
+     * Fetches ONE page of Contacts for every active token in parallel, marks
+     * exhausted tokens so the caller knows when to stop paging.
+     *
+     * @param {object[]} activeTokens
+     * @param {number}   page             - 1-based Xero page number
+     * @param {number}   pageSize         - Xero max is 100
+     * @param {Map}      orgNameByTokenId - tenantId → orgName lookup
+     * @param {object}   [extraHeaders]   - e.g. { 'If-Modified-Since': '...' }
+     * @returns {Promise<{ records: object[], exhaustedTokenIds: Set<string> }>}
+     */
+    static async _queryContactsPage(activeTokens, page, pageSize, orgNameByTokenId, extraHeaders = {}) {
+        const exhaustedTokenIds = new Set();
+        const perToken = await Promise.all(activeTokens.map(async (token) => {
+            const tokenId = token.companyId || token.tenant_id;
+            try {
+                const { records, hasMore } = await XeroApiClient.queryContactsPage(token, page, pageSize, extraHeaders);
+                if (!hasMore) exhaustedTokenIds.add(tokenId);
+                const orgName = (orgNameByTokenId && orgNameByTokenId.get(tokenId)) || 'Xero Organisation';
+                return records.map(r => ({
+                    ...XeroMapper.toContactDTO(r),
+                    clientId:   orgName,
+                    clientName: orgName
+                }));
+            } catch (err) {
+                logger.error(`Error getting Contacts page (page ${page}) for tenant ${tokenId}:`, err.message);
+                exhaustedTokenIds.add(tokenId);
+                return [];
+            }
+        }));
+        return { records: perToken.flat(), exhaustedTokenIds };
+    }
+
+    /**
+     * Fetch one page of contacts across all active tokens.
+     */
+    static async getContactsPage(activeTokens, page, pageSize, orgNameByTokenId, extraHeaders = {}) {
+        return XeroEntityService._queryContactsPage(activeTokens, page, pageSize, orgNameByTokenId, extraHeaders);
+    }
+
+    /**
      * Fetch all contacts from Xero across the calling user's connected tenants.
      */
     static async getContacts(userId) {

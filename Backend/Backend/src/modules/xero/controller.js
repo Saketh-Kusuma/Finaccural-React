@@ -340,13 +340,42 @@ class XeroController {
     });
 
     /**
-     * GET /api/xero/pull-master-data?companyId=...&tier=...
+     * GET /api/xero/pull-master-data?companyId=...&tier=...&stream=...&mode=...
      */
     pullMasterData = asyncHandler(async (req, res, next) => {
-        const { companyId, tier } = req.query;
+        const { companyId, tier, mode, stream } = req.query;
+        const isIncremental = mode === 'incremental';
         const userId = req.user.userId || req.user.id;
 
-        const aggregated = await XeroService.pullMasterData(companyId, tier, userId, false);
+        if (stream === 'true' || req.headers.accept?.includes('text/event-stream')) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.status(200);
+
+            const heartbeatInterval = setInterval(() => {
+                res.write(': heartbeat ping\n\n');
+            }, 15000);
+
+            try {
+                const onProgress = (event) => {
+                    res.write(`data: ${JSON.stringify(event)}\n\n`);
+                };
+
+                const aggregated = await XeroService.pullMasterDataBatched(companyId, tier, userId, onProgress, isIncremental);
+                clearInterval(heartbeatInterval);
+
+                res.write(`data: ${JSON.stringify({ type: 'complete', data: aggregated })}\n\n`);
+                return res.end();
+            } catch (err) {
+                clearInterval(heartbeatInterval);
+                res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+                return res.end();
+            }
+        }
+
+        const aggregated = await XeroService.pullMasterDataBatched(companyId, tier, userId, null, isIncremental);
 
         if (!aggregated) {
             throw new AppError('The requested resource was not found.', 404, 'ERR_NOT_FOUND', `No active connections found for xero.`);
@@ -359,17 +388,47 @@ class XeroController {
             accounts:  aggregated.accounts,
             classes:   aggregated.classes,
             locations: aggregated.locations,
-            isFirstSync: aggregated.isFirstSync
+            isFirstSync: aggregated.isFirstSync,
+            isDone: true
         });
     });
 
     /**
-     * GET /api/xero/refresh-incremental?companyId=...&tier=...
+     * GET /api/xero/refresh-incremental?companyId=...&tier=...&stream=...
      */
     refreshIncremental = asyncHandler(async (req, res, next) => {
-        const { companyId, tier } = req.query;
+        const { companyId, tier, stream } = req.query;
         const userId = req.user.userId || req.user.id;
-        const aggregated = await XeroService.pullMasterData(companyId, tier, userId, true);
+
+        if (stream === 'true' || req.headers.accept?.includes('text/event-stream')) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.status(200);
+
+            const heartbeatInterval = setInterval(() => {
+                res.write(': heartbeat ping\n\n');
+            }, 15000);
+
+            try {
+                const onProgress = (event) => {
+                    res.write(`data: ${JSON.stringify(event)}\n\n`);
+                };
+
+                const aggregated = await XeroService.pullMasterDataBatched(companyId, tier, userId, onProgress, true);
+                clearInterval(heartbeatInterval);
+
+                res.write(`data: ${JSON.stringify({ type: 'complete', data: aggregated })}\n\n`);
+                return res.end();
+            } catch (err) {
+                clearInterval(heartbeatInterval);
+                res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+                return res.end();
+            }
+        }
+
+        const aggregated = await XeroService.pullMasterDataBatched(companyId, tier, userId, null, true);
 
         if (!aggregated) {
             throw new AppError('No active connection found for refresh.', 404, 'ERR_NOT_FOUND', 'Xero connection not found.');
