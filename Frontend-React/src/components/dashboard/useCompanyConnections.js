@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch, openErp, isTrustedOrigin } from "../../taskpane/api";
 import { ExcelService } from "../../taskpane/services/excelService";
 
@@ -156,6 +156,8 @@ export function useCompanyConnections({
   const handleAddCompanyClick = async () => {
     try {
       await ExcelService.clearMasterData();
+      localStorage.removeItem("fa_step_setup");
+      localStorage.removeItem("fa_step_pull");
     } catch (err) {
       console.error("Error clearing Excel data: ", err);
     }
@@ -197,26 +199,31 @@ export function useCompanyConnections({
     }
   };
 
+  const switchingRef = useRef(false);
   const switchActiveCompany = async (companyId) => {
+    if (switchingRef.current) return;
+    switchingRef.current = true;
     setActiveCompanyId(companyId);
     localStorage.setItem("fa_current_company_id", companyId);
     try {
       await ExcelService.clearMasterData();
+      localStorage.removeItem("fa_step_setup");
+      localStorage.removeItem("fa_step_pull");
+      localStorage.removeItem(`fa_step_setup_${companyId}`);
+      localStorage.removeItem(`fa_step_pull_${companyId}`);
     } catch (err) {
       console.error("Error clearing Excel data: ", err);
     }
 
     const targetConn = platformConns.find((c) => c.companyId === companyId);
     try {
-      const res = await apiFetch(`/api/connections/${companyId}/activate`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
+      await apiFetch(`/api/connections/${companyId}/activate`, { method: "POST" });
       if (targetConn) {
-        const countMsg = data.totalRecords ? ` (Total Records Found: ${data.totalRecords})` : "";
-        if (addLog) addLog(`Switched active company to: ${targetConn.companyName}${countMsg}`);
+        if (addLog) addLog(`Switched active company to: ${targetConn.companyName}`);
         notify(
           `Active company updated to ${targetConn.companyName}`,
           "success",
-          data.totalRecords !== undefined ? `Total Records Found: ${data.totalRecords}` : null,
+          null,
           provider
         );
       }
@@ -224,6 +231,8 @@ export function useCompanyConnections({
     } catch (err) {
       console.error("Error activating company:", err);
       notify("Failed to switch active company.", "error", null, provider);
+    } finally {
+      switchingRef.current = false;
     }
   };
 
@@ -240,6 +249,10 @@ export function useCompanyConnections({
       }
       try {
         await ExcelService.clearMasterData();
+        localStorage.removeItem("fa_step_setup");
+        localStorage.removeItem("fa_step_pull");
+        localStorage.removeItem(`fa_step_setup_${compId}`);
+        localStorage.removeItem(`fa_step_pull_${compId}`);
       } catch (_) {}
       notify("Company disconnected.", "success", null, provider);
       if (addLog) addLog(`Company disconnected: ${compName}`);

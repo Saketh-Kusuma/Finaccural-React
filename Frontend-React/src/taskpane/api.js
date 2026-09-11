@@ -83,7 +83,7 @@ export async function apiFetch(path, options = {}) {
   return response;
 }
 
-export function openAuth(provider, onProfile, loginHint) {
+export function openAuth(provider, onProfile, loginHint, onCancel) {
   let url = `${API_BASE}/api/${provider === "google" ? "auth/google" : "microsoft"}/connect`;
   if (loginHint) url += `?login_hint=${encodeURIComponent(loginHint)}`;
   const popup = window.open(url, `fa_${provider}_auth`, "width=520,height=640,resizable=yes,scrollbars=yes");
@@ -93,10 +93,20 @@ export function openAuth(provider, onProfile, loginHint) {
     const data = event.data || {};
     const types = provider === "google" ? ["google_authed", "google_profile"] : ["microsoft_authed", "ms_authed", "microsoft_profile", "ms_profile"];
     if (!types.includes(data.type)) return;
+    clearInterval(closedTimer);
     window.removeEventListener("message", receive);
     onProfile({ ...data, provider });
   };
   window.addEventListener("message", receive);
+
+  // Re-enable buttons if the user closes the popup without completing auth
+  const closedTimer = setInterval(() => {
+    if (popup.closed) {
+      clearInterval(closedTimer);
+      window.removeEventListener("message", receive);
+      if (onCancel) onCancel();
+    }
+  }, 500);
 }
 
 export function openErp(provider, user, reconnectId = null) {

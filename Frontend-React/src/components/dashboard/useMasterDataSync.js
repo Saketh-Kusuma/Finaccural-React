@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   fetchMasterDataStream,
   fetchIncrementalDataStream,
@@ -18,11 +18,38 @@ export function useMasterDataSync({
   const [spinning, setSpinning] = useState(false);
   const [setupBusy, setSetupBusy] = useState(false);
   const [pullBusy, setPullBusy] = useState(false);
+
+  const companyId = activeConnection?.companyId || "";
+
+  // Per-company localStorage keys
+  const setupKey = companyId ? `fa_step_setup_${companyId}` : "fa_step_setup";
+  const pullKey  = companyId ? `fa_step_pull_${companyId}`  : "fa_step_pull";
+
   const [isSetupDone, setIsSetupDone] = useState(
-    () => localStorage.getItem("fa_step_setup") === "complete"
+    () => localStorage.getItem(companyId ? `fa_step_setup_${companyId}` : "fa_step_setup") === "complete"
   );
-  const [isPullDone, setIsPullDone] = useState(false);
+  const [isPullDone, setIsPullDone] = useState(
+    () => localStorage.getItem(companyId ? `fa_step_pull_${companyId}` : "fa_step_pull") === "complete"
+  );
   const [logs, setLogs] = useState([]);
+
+  // When the active company changes, Excel data is cleared, so reset setup & pull steps to blue (not completed)
+  const prevCompanyIdRef = useRef(companyId);
+  useEffect(() => {
+    if (prevCompanyIdRef.current === companyId) return;
+    prevCompanyIdRef.current = companyId;
+
+    if (companyId) {
+      localStorage.removeItem(`fa_step_setup_${companyId}`);
+      localStorage.removeItem(`fa_step_pull_${companyId}`);
+    }
+    localStorage.removeItem("fa_step_setup");
+    localStorage.removeItem("fa_step_pull");
+
+    setIsSetupDone(false);
+    setIsPullDone(false);
+    setLogs([]);
+  }, [companyId]);
 
   const addLog = useCallback((msg) => {
     const time = new Date().toLocaleTimeString();
@@ -83,7 +110,7 @@ export function useMasterDataSync({
     notify("Setting up sheets...", "success", null, provider);
     try {
       await ExcelService.setupWorkbookSheets(provider);
-      localStorage.setItem("fa_step_setup", "complete");
+      localStorage.setItem(setupKey, "complete");
       setIsSetupDone(true);
       addLog("Sheets setup successfully.");
       notify("Master and Input sheets setup successfully.", "success", null, provider);
@@ -110,6 +137,15 @@ export function useMasterDataSync({
 
     setPullBusy(true);
     const activeId = activeConnection?.companyId || realmId || "";
+
+    // Start free trial timer when Pull Master Data is clicked if not already active
+    const currentPlan = (localStorage.getItem("fa_plan") || localStorage.getItem("fa_subscription_plan") || "").toLowerCase();
+    if (currentPlan.includes("trial") && !localStorage.getItem("fa_trial_start") && !localStorage.getItem("fa_trial_ends_at")) {
+      const now = Date.now();
+      localStorage.setItem("fa_trial_start", now.toString());
+      localStorage.setItem("fa_trial_ends_at", (now + 2 * 60 * 1000).toString());
+    }
+
     addLog(`Pulling master data from ${label}...`);
     notify("Initializing Data Pull...", "success", "Pre-flight record count check in progress...", provider);
 
@@ -142,11 +178,13 @@ export function useMasterDataSync({
       if (batch.length === 0) {
         addLog("Pull: no master data records found for this company.");
         notify("No more data available.", "success", "No master data found for this company.", provider);
+        localStorage.setItem(pullKey, "complete");
         setIsPullDone(true);
         return;
       }
 
       const count = await ExcelService.appendManualBatch(provider, batch);
+      localStorage.setItem(pullKey, "complete");
       setIsPullDone(true);
       const pullTitle = "Data completed.";
       const pullDetail = `Successfully fetched all ${count} records across all entities for this company.`;
@@ -165,6 +203,21 @@ export function useMasterDataSync({
     if (checkTrialExpiredGuard()) return;
     if (checkExpiredCompanyGuard()) return;
     if (spinning) return;
+
+    if (!isSetupDone) {
+      const msg = `Cannot refresh: You must run Setup Master & Input Sheets for ${label} first.`;
+      addLog(`Refresh failed: ${msg}`);
+      notify("Refresh Failed", "error", msg, provider);
+      return;
+    }
+
+    if (!isPullDone) {
+      const msg = `Cannot refresh: You must Pull Master Data for ${label} before refreshing.`;
+      addLog(`Refresh failed: ${msg}`);
+      notify("Refresh Failed", "error", msg, provider);
+      return;
+    }
+
     setSpinning(true);
     const activeId = activeConnection?.companyId || realmId || "";
     addLog(`Refreshing live data from ${label}...`);

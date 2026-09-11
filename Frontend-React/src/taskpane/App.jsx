@@ -156,7 +156,7 @@ export function App() {
       "fa_user_name", "fa_user_email", "fa_plan", "fa_subscription_plan",
       "fa_subscription_id", "fa_jwt_token", "fa_refresh_token",
       "fa_erp_connected", "fa_erp_type", "fa_current_company_id", "fa_has_subscription",
-      "fa_trial_ends_at", "fa_trial_start"
+      "fa_trial_ends_at", "fa_trial_start", "fa_step_setup", "fa_step_pull"
     ].forEach((key) => localStorage.removeItem(key));
     sessionStorage.removeItem("fa_erp_user_disconnected");
     setUser({});
@@ -384,17 +384,11 @@ export function App() {
           try {
             const res = await apiFetch("/api/auth/me");
             const data = await res.json();
-            if (data?.user) {
-              if (data.user.trialEndsAt) {
-                const ts = new Date(data.user.trialEndsAt).getTime();
-                localStorage.setItem("fa_trial_ends_at", String(ts));
-              } else if (!localStorage.getItem("fa_trial_start")) {
-                localStorage.setItem("fa_trial_start", Date.now().toString());
-              }
+            if (data?.user?.trialEndsAt) {
+              const ts = new Date(data.user.trialEndsAt).getTime();
+              localStorage.setItem("fa_trial_ends_at", String(ts));
             }
           } catch (_) {}
-        } else if (!localStorage.getItem("fa_trial_start")) {
-          localStorage.setItem("fa_trial_start", Date.now().toString());
         }
       }
     };
@@ -545,15 +539,20 @@ export function App() {
   };
 
   const authenticate = (provider, loginHint) => {
-    setBusy(true);
+    setBusy(provider);
     try {
-      openAuth(provider, (profile) => {
-        saveUser(profile);
-        setBusy(false);
-      }, loginHint);
+      openAuth(
+        provider,
+        (profile) => {
+          saveUser(profile);
+          setBusy(null);
+        },
+        loginHint,
+        () => setBusy(null)   // user closed the popup without signing in
+      );
     } catch (error) {
       notify(error.message, "error");
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -571,8 +570,13 @@ export function App() {
       localStorage.setItem("fa_plan", finalPlan);
       localStorage.setItem("fa_subscription_plan", finalPlan);
       localStorage.setItem("fa_subscription_id", String(subId));
-      localStorage.setItem("fa_trial_ends_at", String(trialEndsAt));
-      localStorage.setItem("fa_trial_start", Date.now().toString());
+      if (serverUser.trialEndsAt) {
+        const trialEndsAt = new Date(serverUser.trialEndsAt).getTime();
+        localStorage.setItem("fa_trial_ends_at", String(trialEndsAt));
+      } else {
+        localStorage.removeItem("fa_trial_ends_at");
+        localStorage.removeItem("fa_trial_start");
+      }
 
       setUser((prev) => ({
         ...prev,

@@ -79,6 +79,8 @@ export const ExcelBatchAppender = {
       }
     }
 
+    let actualWrittenCount = 0;
+
     await Excel.run(async (context) => {
       const sheet = context.workbook.worksheets.getItem("1.Master_Data");
       const BLOCKS = {
@@ -248,9 +250,11 @@ export const ExcelBatchAppender = {
 
       sheet.getRange("A1:AB1").format.columnWidth = 115;
       await context.sync();
-      return totalWrittenRecords;
+
+      // Capture the actual count written before Excel.run context closes
+      actualWrittenCount = totalWrittenRecords;
     });
 
-    return batch.length;
+    return actualWrittenCount;
   }
 };

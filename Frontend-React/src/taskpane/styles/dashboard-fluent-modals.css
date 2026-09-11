@@ -176,8 +176,10 @@
   transition: background 0.15s;
 }
 .fa-context-item:hover { background: #f0f4ff; color: #173b7a; }
-.fa-context-item:last-child { color: #dc2626; }
-.fa-context-item:last-child:hover { background: #fee2e2; }
+.fa-context-item.danger,
+.fa-context-item:last-child:not(:first-child) { color: #dc2626; }
+.fa-context-item.danger:hover,
+.fa-context-item:last-child:not(:first-child):hover { background: #fee2e2; }
 
 /* ── XERO COMPANY SELECTION LIST STYLING ───────────────────────── */
 .xero-company-row {

@@ -5,7 +5,6 @@ export function CompanyContextMenu({
   x,
   y,
   company,
-  onEdit,
   onDisconnect,
   onClose,
 }) {
@@ -17,7 +16,12 @@ export function CompanyContextMenu({
     return () => window.removeEventListener("click", handleClick);
   }, [visible, onClose]);
 
-  if (!visible) return null;
+  const isDisconnected =
+    company?.status === "Disconnected" ||
+    (typeof company?.status === "string" &&
+      company.status.toLowerCase() === "disconnected");
+
+  if (!visible || isDisconnected) return null;
 
   return (
     <div
@@ -30,16 +34,7 @@ export function CompanyContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <button
-        className="fa-context-item"
-        onClick={() => {
-          onClose();
-          if (company) onEdit(company);
-        }}
-      >
-        Edit
-      </button>
-      <button
-        className="fa-context-item"
+        className="fa-context-item danger"
         onClick={() => {
           onClose();
           if (company) onDisconnect(company);

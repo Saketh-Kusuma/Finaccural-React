@@ -10,7 +10,6 @@ import { SubscriptionCard } from "./dashboard/SubscriptionCard";
 import { JournalSelector } from "./dashboard/JournalSelector";
 import { SyncActionsPanel } from "./dashboard/SyncActionsPanel";
 import { ChangeCompanyModal } from "./dashboard/ChangeCompanyModal";
-import { RenameCompanyModal } from "./dashboard/RenameCompanyModal";
 import { CompanyContextMenu } from "./dashboard/CompanyContextMenu";
 
 export function ConnectedDashboard({
@@ -28,8 +27,6 @@ export function ConnectedDashboard({
   const [journal, setJournal] = useState("accrual");
   const [menu, setMenu] = useState(false);
   const [showChangeModal, setShowChangeModal] = useState(false);
-  const [showRenameModal, setShowRenameModal] = useState(false);
-  const [renamingCompany, setRenamingCompany] = useState(null);
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, company: null });
 
   // Format plan for pill and stats
@@ -114,9 +111,7 @@ export function ConnectedDashboard({
             if (companyConn.activeConnection) {
               await companyConn.handleDisconnectCompany(companyConn.activeConnection);
             }
-            if (companyConn.platformConns.length <= 1) {
-              disconnect();
-            }
+            disconnect();
           }}
         >
           Disconnect {companyConn.label}
@@ -222,26 +217,12 @@ export function ConnectedDashboard({
         }}
       />
 
-      <RenameCompanyModal
-        isOpen={showRenameModal}
-        company={renamingCompany}
-        onClose={() => {
-          setShowRenameModal(false);
-          setRenamingCompany(null);
-        }}
-        onSave={(comp, newName) => companyConn.handleRenameCompany(comp, newName)}
-      />
-
       <CompanyContextMenu
         visible={contextMenu.visible}
         x={contextMenu.x}
         y={contextMenu.y}
         company={contextMenu.company}
         onClose={() => setContextMenu({ visible: false, x: 0, y: 0, company: null })}
-        onEdit={(comp) => {
-          setRenamingCompany(comp);
-          setShowRenameModal(true);
-        }}
         onDisconnect={(comp) => companyConn.handleDisconnectCompany(comp)}
       />
     </section>

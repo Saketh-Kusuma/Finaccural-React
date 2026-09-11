@@ -347,7 +347,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #334155;
+  color: #173b7a;
   font-size: 12px;
   font-weight: 700;
 }
@@ -361,7 +361,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #1e293b;
+  background: #173b7a;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -65,16 +65,23 @@ export function CompanyListSection({
               ) : (
                 <span className="fa-badge-active">ACTIVE</span>
               )}
-              <button
-                className="fa-btn-dots"
-                title="More options"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenContextMenu(e, { companyId: realmId, companyName, platform: provider });
-                }}
-              >
-                ⋮
-              </button>
+              {activeConnection?.status !== "Disconnected" && (
+                <button
+                  className="fa-btn-dots"
+                  title="More options"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenContextMenu(
+                      e,
+                      activeConnection
+                        ? { ...activeConnection, companyName: companyName || activeConnection.companyName, platform: provider || activeConnection.platform }
+                        : { companyId: realmId, companyName, platform: provider, status: activeConnection?.status }
+                    );
+                  }}
+                >
+                  ⋮
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -143,16 +150,18 @@ export function CompanyListSection({
                       Switch
                     </button>
                   )}
-                  <button
-                    className="fa-btn-dots"
-                    title="More options"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenContextMenu(e, c);
-                    }}
-                  >
-                    ⋮
-                  </button>
+                  {!isDisconnected && (
+                    <button
+                      className="fa-btn-dots"
+                      title="More options"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenContextMenu(e, c);
+                      }}
+                    >
+                      ⋮
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -112,7 +112,7 @@ export function Welcome({ onAuth, busy }) {
                 onClick={() => onAuth("google")}
               >
                 <GoogleIcon />
-                {busy ? "Signing in…" : "Continue with Google"}
+                {busy === "google" ? "Signing in…" : "Continue with Google"}
               </button>
               <button
                 className="fa-provider-btn"
@@ -120,7 +120,7 @@ export function Welcome({ onAuth, busy }) {
                 onClick={() => onAuth("microsoft")}
               >
                 <MicrosoftIcon />
-                {busy ? "Signing in…" : "Continue with Microsoft"}
+                {busy === "microsoft" ? "Signing in…" : "Continue with Microsoft"}
               </button>
             </div>
           )}
