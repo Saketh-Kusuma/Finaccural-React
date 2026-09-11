@@ -24,13 +24,27 @@ export const NotificationService = {
     };
   },
 
+  TTL_MS: 24 * 60 * 60 * 1000, // 24 hours
+
+  isNotExpired(timestamp) {
+    if (!timestamp) return false;
+    const time = new Date(timestamp).getTime();
+    if (isNaN(time)) return false;
+    return Date.now() - time < this.TTL_MS;
+  },
+
+  filterValid(notifications) {
+    if (!Array.isArray(notifications)) return [];
+    return notifications.filter((n) => this.isNotExpired(n?.timestamp));
+  },
+
   async fetchNotifications() {
     try {
       const res = await apiFetch("/api/notifications");
       if (!res.ok) return [];
       const data = await res.json();
       const rows = Array.isArray(data.notifications) ? data.notifications : [];
-      return rows.map((r) => this._mapFromBackend(r));
+      return this.filterValid(rows.map((r) => this._mapFromBackend(r)));
     } catch (_) {
       return [];
     }

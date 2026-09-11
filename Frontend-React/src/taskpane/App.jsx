@@ -38,7 +38,7 @@ export function App() {
   // Fetch notifications history when user email is available
   const loadNotifications = useCallback(async () => {
     const list = await NotificationService.fetchNotifications();
-    setNotifications(list);
+    setNotifications(NotificationService.filterValid(list));
   }, []);
 
   useEffect(() => {
@@ -46,6 +46,18 @@ export function App() {
       loadNotifications();
     }
   }, [user.email, loadNotifications]);
+
+  // Real-time eviction of notifications exceeding 24 hours while the add-in remains open
+  useEffect(() => {
+    if (!user.email) return;
+    const interval = setInterval(() => {
+      setNotifications((prev) => {
+        const valid = NotificationService.filterValid(prev);
+        return valid.length === prev.length ? prev : valid;
+      });
+    }, 60 * 1000); // Check every minute for real-time eviction
+    return () => clearInterval(interval);
+  }, [user.email]);
 
   const dismissToast = useCallback((id) => {
     setToasts((prev) =>
@@ -99,7 +111,9 @@ export function App() {
           timestamp: new Date().toISOString(),
           read: false
         };
-        setNotifications((prev) => [tempNotif, ...prev].slice(0, NotificationService.MAX_ITEMS));
+        setNotifications((prev) =>
+          NotificationService.filterValid([tempNotif, ...prev]).slice(0, NotificationService.MAX_ITEMS)
+        );
 
         NotificationService.postNotification(
           resolvedType,
@@ -119,7 +133,9 @@ export function App() {
   );
 
   const unreadCount = useMemo(() => {
-    return notifications.filter((n) => !n.read).length;
+    return notifications.filter(
+      (n) => !n.read && NotificationService.isNotExpired(n?.timestamp)
+    ).length;
   }, [notifications]);
 
   const toggleDrawer = useCallback((top = "56px") => {
@@ -127,16 +143,20 @@ export function App() {
     setDrawerOpen((prev) => {
       const next = !prev;
       if (next) {
-        // Mark all as read
-        const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+        // Sync with backend on open to catch backend purges
+        loadNotifications();
+
+        // Immediately filter out expired items and mark unread as read
+        const valid = NotificationService.filterValid(notifications);
+        const unreadIds = valid.filter((n) => !n.read).map((n) => n.id);
         if (unreadIds.length > 0) {
           NotificationService.markRead(unreadIds);
-          setNotifications((curr) => curr.map((n) => ({ ...n, read: true })));
         }
+        setNotifications(valid.map((n) => ({ ...n, read: true })));
       }
       return next;
     });
-  }, [notifications]);
+  }, [notifications, loadNotifications]);
 
   const clearAllNotifications = useCallback(async () => {
     const ok = await NotificationService.clearAll();

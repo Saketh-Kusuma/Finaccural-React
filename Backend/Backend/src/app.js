@@ -77,12 +77,10 @@ app.use(sanitizeInput);
 
 
 const session = require('express-session');
-const { RedisStore } = require("connect-redis");
-const redisClient = require('./core/redis');
+
 
 
 app.use(session({
-    store: new RedisStore({ client: redisClient }),
     secret: config.SESSION_SECRET || 'finaccrual-fallback-secret-key',
     resave: false,
     saveUninitialized: false,

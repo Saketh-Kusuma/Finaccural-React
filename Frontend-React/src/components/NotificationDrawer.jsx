@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { NotificationService } from "../taskpane/services/notificationService";
 
 function formatTimestamp(iso) {
   const d = new Date(iso);
@@ -35,6 +36,10 @@ export function NotificationDrawer({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
 
+  const validNotifications = (notifications || []).filter((n) =>
+    NotificationService.isNotExpired(n?.timestamp)
+  );
+
   return (
     <div className="fa-notif-drawer-anchor" style={{ zIndex: 10000 }}>
       <div
@@ -57,10 +62,10 @@ export function NotificationDrawer({
           </button>
         </div>
         <div className="fa-notif-list" id="notifList">
-          {notifications.length === 0 ? (
+          {validNotifications.length === 0 ? (
             <div className="fa-notif-empty">No notifications available.</div>
           ) : (
-            notifications.map((n) => {
+            validNotifications.map((n) => {
               const isError = n.type === "error";
               return (
                 <div

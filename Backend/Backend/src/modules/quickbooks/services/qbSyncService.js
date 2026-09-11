@@ -208,15 +208,9 @@ class QuickBooksSyncService {
         let active = entities.slice();
         let startPosition = 1;
         let batchNumber = 0;
-        const realmId = token.companyId || token.realm_id;
 
         while (active.length > 0) {
             batchNumber += 1;
-            const batchStart = Date.now();
-
-            active.forEach(entityName => {
-                console.log(`[BATCH ${batchNumber}][${entityLabel[entityName]}] START position=${startPosition} limit=${pageSize} realm=${realmId}`);
-            });
 
             const pages = await Promise.all(active.map(entityName =>
                 QuickBooksApiClient.queryPage(entityName, token, startPosition, pageSize)
@@ -225,7 +219,6 @@ class QuickBooksSyncService {
             const stillActive = [];
             active.forEach((entityName, i) => {
                 const { records, hasMore } = pages[i];
-                console.log(`[BATCH ${batchNumber}][${entityLabel[entityName]}] RESPONSE count=${records.length} realm=${realmId} (+${Date.now() - batchStart}ms since this batch's requests started)`);
                 recordsByEntity[entityName].push(...records);
                 if (hasMore) stillActive.push(entityName);
             });
@@ -242,8 +235,6 @@ class QuickBooksSyncService {
      */
     static async _fetchOnePageForToken(token, priorCursor, pageSize = QuickBooksSyncService.PULL_PAGE_SIZE) {
         const entities = QuickBooksSyncService.SEQUENTIAL_ENTITY_ORDER;
-        const entityLabel = { Account: 'Accounts', Class: 'Classes', Department: 'Locations', Customer: 'Customers', Vendor: 'Vendors' };
-        const realmId = token.companyId || token.realm_id;
         const safePriorCursor = priorCursor && typeof priorCursor === 'object' ? priorCursor : {};
 
         const recordsByEntity = { Customer: [], Vendor: [], Account: [], Class: [], Department: [] };
@@ -256,9 +247,7 @@ class QuickBooksSyncService {
 
             const startPosition = (safePriorCursor[entityName] && safePriorCursor[entityName].position) || 1;
 
-            console.log(`[PAGE][${entityLabel[entityName]}] START position=${startPosition} limit=${pageSize} realm=${realmId}`);
             const { records, hasMore } = await QuickBooksApiClient.queryPage(entityName, token, startPosition, pageSize);
-            console.log(`[PAGE][${entityLabel[entityName]}] RESPONSE count=${records.length} realm=${realmId}`);
 
             nextCursor[entityName] = {
                 position: startPosition + pageSize,
@@ -266,14 +255,10 @@ class QuickBooksSyncService {
             };
 
             if (records.length === 0) {
-                console.log(`[PAGE][${entityLabel[entityName]}] COMPLETED realm=${realmId} — moving to next API`);
                 continue;
             }
 
             recordsByEntity[entityName] = records;
-            if (!hasMore) {
-                console.log(`[PAGE][${entityLabel[entityName]}] COMPLETED realm=${realmId}`);
-            }
 
             return {
                 recordsByEntity,
@@ -321,13 +306,6 @@ class QuickBooksSyncService {
             batchCount < MAX_BATCHES
         ) {
             batchCount += 1;
-            const batchStartedAt = Date.now();
-
-            if (customersTokens.length) console.log(`[BATCH ${batchCount}][Customers] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (vendorsTokens.length) console.log(`[BATCH ${batchCount}][Vendors] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (accountsTokens.length) console.log(`[BATCH ${batchCount}][Accounts] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (classesTokens.length) console.log(`[BATCH ${batchCount}][Classes] START position=${startPosition} limit=${BATCH_SIZE}`);
-            if (locationsTokens.length) console.log(`[BATCH ${batchCount}][Locations] START position=${startPosition} limit=${BATCH_SIZE}`);
 
             const [customersResult, vendorsResult, accountsResult, classesResult, locationsResult] = await Promise.all([
                 customersTokens.length
@@ -351,12 +329,6 @@ class QuickBooksSyncService {
                         .catch(() => ({ records: [], exhaustedTokenIds: allTokenIds(locationsTokens) }))
                     : Promise.resolve(emptyPage())
             ]);
-
-            console.log(`[BATCH ${batchCount}][Customers] RESPONSE count=${customersResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Vendors] RESPONSE count=${vendorsResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Accounts] RESPONSE count=${accountsResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Classes] RESPONSE count=${classesResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
-            console.log(`[BATCH ${batchCount}][Locations] RESPONSE count=${locationsResult.records.length} (+${Date.now() - batchStartedAt}ms since this batch's requests started)`);
 
             customers.push(...customersResult.records);
             vendors.push(...vendorsResult.records);

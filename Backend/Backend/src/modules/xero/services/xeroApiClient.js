@@ -88,8 +88,6 @@ class XeroApiClient {
         const mergedHeaders = { ...headers, ...extraHeaders };
 
         const url = CONSTANTS.XERO.CONTACTS_URL;
-        const qbHttpStart = Date.now();
-        console.log(`[XERO-HTTP] ${new Date(qbHttpStart).toISOString()} CONTACTS PAGE=${page} tenant=${tenantId}`);
 
         const response = await XeroApiClient.executeWithRetryAndBackoff(() =>
             axios.get(url, {
@@ -98,8 +96,6 @@ class XeroApiClient {
                 validateStatus: (status) => (status >= 200 && status < 300) || status === 304
             })
         );
-
-        console.log(`[XERO-HTTP] ${new Date().toISOString()} CONTACTS PAGE=${page} count=${response.data?.Contacts?.length ?? 0} (+${Date.now() - qbHttpStart}ms) tenant=${tenantId}`);
 
         const records = response.data?.Contacts || [];
         // Xero returns fewer than pageSize when on the last page

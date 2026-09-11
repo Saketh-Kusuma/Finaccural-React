@@ -19,7 +19,6 @@ class JwtService {
      * @returns {string} signed JWT
      */
     static generateToken(payload) {
-        console.log(`[JWT] New access token generated for user: ${payload.userId}`);
         return jwt.sign(payload, config.JWT_SECRET, { expiresIn: '1h' });
     }
 
@@ -37,7 +36,6 @@ class JwtService {
     static generateRefreshToken() {
         const crypto = require('crypto');
         const token = crypto.randomBytes(64).toString('hex');
-        console.log(`[JWT] New refresh token generated`);
         return token;
     }
 

@@ -72,13 +72,6 @@ class GoogleAuthService {
             const clientSecret = config.GOOGLE.CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
             const redirectUri  = config.GOOGLE.REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:8000/api/auth/google/callback';
 
-            console.log("EXCHANGE PARAMS:", {
-                code: code ? 'Present' : 'Missing',
-                client_id: clientId,
-                client_secret_len: clientSecret ? clientSecret.length : 0,
-                redirect_uri: redirectUri
-            });
-
             const response = await axios.post(
                 'https://oauth2.googleapis.com/token',
                 querystring.stringify({

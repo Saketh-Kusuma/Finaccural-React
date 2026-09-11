@@ -46,27 +46,18 @@ const notificationsRoutes = require('../modules/notifications/routes');
 const excelValidationRoutes = require('../modules/excelValidation/routes');
  
 const { sequelize } = require('../core/database');
-const redisClient = require('../core/redis');
 const config = require('../core/config');
 
 router.get('/health', async (req, res) => {
     let dbStatus = 'disconnected';
-    let redisStatus = 'disconnected';
     try {
         await sequelize.authenticate();
         dbStatus = 'connected';
-    } catch (err) {}
-    try {
-        if (redisClient.isOpen) {
-            await redisClient.ping();
-            redisStatus = 'connected';
-        }
     } catch (err) {}
     return res.status(200).json({
         success: true,
         server: 'healthy',
         instance: config.INSTANCE_ID,
-        redis: redisStatus,
         database: dbStatus
     });
 });

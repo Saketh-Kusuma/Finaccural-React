@@ -18,11 +18,6 @@ class QuickBooksApiClient {
         let realmId;
         let accessToken;
 
-        const qbEntityMatch = /FROM\s+(\w+)/i.exec(query);
-        const qbPosMatch = /STARTPOSITION\s+(\d+)/i.exec(query);
-        const qbLabel = `${qbEntityMatch ? qbEntityMatch[1] : 'query'}${qbPosMatch ? ` @${qbPosMatch[1]}` : ''}`;
-        const qbCallStart = Date.now();
-
         if (token) {
             realmId = token.companyId || token.realm_id;
             accessToken = await QuickBooksTokenManager.getValidToken(realmId);
@@ -36,11 +31,7 @@ class QuickBooksApiClient {
             accessToken = await QuickBooksTokenManager.getValidToken(realmId);
         }
 
-        console.log(`[QB-HTTP] ${new Date().toISOString()} TOKEN READY     ${qbLabel} realm=${realmId} (+${Date.now() - qbCallStart}ms since executeQuery() was called)`);
-
         const url = `${CONSTANTS.QUICKBOOKS.BASE_URL}/v3/company/${realmId}/query`;
-        const qbHttpStart = Date.now();
-        console.log(`[QB-HTTP] ${new Date(qbHttpStart).toISOString()} REQUEST START   ${qbLabel} realm=${realmId}`);
 
         try {
             const response = await axios.get(url, {
@@ -51,10 +42,8 @@ class QuickBooksApiClient {
                 },
                 params: { query }
             });
-            console.log(`[QB-HTTP] ${new Date().toISOString()} RESPONSE OK     ${qbLabel} realm=${realmId} (+${Date.now() - qbHttpStart}ms)`);
             return response.data;
         } catch (error) {
-            console.log(`[QB-HTTP] ${new Date().toISOString()} RESPONSE ERROR  ${qbLabel} realm=${realmId} (+${Date.now() - qbHttpStart}ms)`);
             logger.error(`Error executing QB query for realm ${realmId}:`, error.response?.data || error.message);
             throw error;
         }

@@ -166,7 +166,6 @@ All configuration values (ports, OAuth scopes, external URLs) are centralized. E
 - **Session Lost:** Ensure `express-session` is configured correctly if deploying behind a reverse proxy (e.g., setting `trust proxy = 1`).
 
 ## 24. Future Enhancements
-- Implement a task queue (e.g., BullMQ, Redis) for heavy background synchronization tasks.
 - Migrate database to PostgreSQL for production readiness.
 - Add comprehensive Unit & Integration test coverage.
 - Add Swagger/OpenAPI documentation.

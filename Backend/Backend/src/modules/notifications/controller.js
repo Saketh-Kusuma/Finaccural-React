@@ -34,6 +34,19 @@ class NotificationController {
         });
     }
 
+    /** Hard-deletes all notifications older than NOTIFICATION_TTL_MS across all users. */
+    async purgeAllExpired() {
+        try {
+            return await Notification.destroy({
+                where: {
+                    createdAt: { [Op.lt]: new Date(Date.now() - NOTIFICATION_TTL_MS) }
+                }
+            });
+        } catch (_) {
+            return 0;
+        }
+    }
+
     /**
      * GET /api/notifications
      * Returns every (non-expired) notification belonging to the logged-in
@@ -121,4 +134,25 @@ class NotificationController {
     };
 }
 
-module.exports = new NotificationController();
+const controller = new NotificationController();
+
+function startNotificationCleanupJob(intervalMs = 60 * 60 * 1000) {
+    // Run once on start
+    controller.purgeAllExpired().catch(() => {});
+
+    // Run periodically (hourly by default)
+    const timer = setInterval(() => {
+        controller.purgeAllExpired().catch(() => {});
+    }, intervalMs);
+
+    if (timer.unref) {
+        timer.unref();
+    }
+
+    return timer;
+}
+
+controller.startNotificationCleanupJob = startNotificationCleanupJob;
+
+module.exports = controller;
+

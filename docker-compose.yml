@@ -1,11 +1,5 @@
 version: '3.8'
 services:
-  redis:
-    image: redis:alpine
-    container_name: erp_redis
-    ports:
-      - "6379:6379"
-    restart: always
   nginx:
     image: nginx:alpine
     container_name: erp_nginx
@@ -15,6 +9,4 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - redis
     restart: always

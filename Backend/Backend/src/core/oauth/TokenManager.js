@@ -70,8 +70,6 @@ class TokenManager {
                 refreshTokenExpiresIn: newTokens.refreshTokenExpiresIn || null
             });
 
-            console.log('token was refreshed');
-
             return newTokens.accessToken;
 
         } catch (error) {

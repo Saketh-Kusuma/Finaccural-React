@@ -62,6 +62,7 @@ process.env.BACKEND_HTTPS = (
 // ---------------------------------------------------------------------------
 const app    = require('./app');
 const { sequelize } = require('./core/database');
+const { startNotificationCleanupJob } = require('./modules/notifications');
 const config = require('./core/config');
 const logger = require('./core/logger');
 
@@ -100,6 +101,7 @@ sequelize
     .sync({ alter: shouldAlter })
     .then(() => {
         logger.info('Database synchronized.');
+        startNotificationCleanupJob();
         startServer();
     })
     .catch((err) => {
