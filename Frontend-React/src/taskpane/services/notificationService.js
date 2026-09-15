@@ -8,7 +8,9 @@ export const NotificationService = {
   MAX_ITEMS: 50,
 
   _normalizeProvider(provider) {
-    if (provider === "quickbooks" || provider === "xero") return provider;
+    if (!provider) return null;
+    const lower = String(provider).trim().toLowerCase();
+    if (lower === "quickbooks" || lower === "xero") return lower;
     return null;
   },
 
@@ -52,13 +54,14 @@ export const NotificationService = {
 
   async postNotification(type, message, detail, provider) {
     try {
+      const normalizedProvider = this._normalizeProvider(provider);
       const res = await apiFetch("/api/notifications", {
         method: "POST",
         body: JSON.stringify({
-          type,
-          message,
-          detail: detail ? String(detail) : undefined,
-          provider: provider || undefined
+          type: type === "error" ? "error" : "success",
+          message: String(message || "").trim(),
+          detail: detail ? String(detail).trim() : undefined,
+          provider: normalizedProvider || undefined
         })
       });
       if (!res.ok) return null;

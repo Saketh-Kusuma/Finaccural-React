@@ -41,6 +41,23 @@ function CopyIcon() {
   );
 }
 
+function CheckIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#16a34a"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
 function LinkIcon({ size = 18, stroke = "#2563eb" }) {
   return (
     <svg
@@ -200,11 +217,16 @@ export function Dashboard({
       ? rawPlan
       : `${rawPlan} Plan`;
 
+  const [copied, setCopied] = useState(false);
+
   const copySubId = () => {
     if (subId && subId !== "—") {
       navigator.clipboard
         ?.writeText(subId)
-        .then(() => notify("Subscription ID copied!"))
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        })
         .catch(() => {});
     }
   };
@@ -283,7 +305,7 @@ export function Dashboard({
           planClean={rawPlan}
           onClose={() => setMenu(false)}
           onLogout={onLogout}
-          onChangePlan={onChangePlan || (() => notify("Plan selector opened."))}
+          onChangePlan={onChangePlan}
           notify={notify}
         />
       )}
@@ -309,10 +331,10 @@ export function Dashboard({
               {subId}
               <button
                 className="btn-copy-subid"
-                title="Copy Subscription ID"
+                title={copied ? "Copied!" : "Copy Subscription ID"}
                 onClick={copySubId}
               >
-                <CopyIcon />
+                {copied ? <CheckIcon /> : <CopyIcon />}
               </button>
             </span>
           </div>

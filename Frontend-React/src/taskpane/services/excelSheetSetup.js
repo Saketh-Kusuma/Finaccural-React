@@ -141,12 +141,49 @@ export const ExcelSheetSetup = {
   async stampLastRefreshed(timestamp) {
     if (typeof Excel === "undefined") return;
     await Excel.run(async (context) => {
-      const sheet = context.workbook.worksheets.getItem("1.Master_Data");
-      const cell = sheet.getRange("V1");
+      const sheet = context.workbook.worksheets.getItemOrNullObject("1.Master_Data");
+      sheet.load("isNullObject");
+      await context.sync();
+      if (sheet.isNullObject) return;
+
+      const cell = sheet.getRange("AC1");
       cell.values = [[`Last Refreshed: ${timestamp}`]];
       cell.format.font.bold = true;
-      cell.format.font.color = "white";
+      cell.format.font.size = 10;
+      cell.format.font.color = "#475569";
+      cell.format.fill.color = "#F1F5F9";
+      cell.format.horizontalAlignment = "Center";
+      cell.format.verticalAlignment = "Center";
+      sheet.getRange("AC:AC").format.columnWidth = 140;
       await context.sync();
     });
+  },
+
+  async checkWorkbookStatus() {
+    if (typeof Excel === "undefined") {
+      return { isExcelAvailable: false, hasSheets: false, hasData: false };
+    }
+    try {
+      return await Excel.run(async (context) => {
+        const masterSheet = context.workbook.worksheets.getItemOrNullObject("1.Master_Data");
+        const inputSheet = context.workbook.worksheets.getItemOrNullObject("2.Input");
+        masterSheet.load("isNullObject");
+        inputSheet.load("isNullObject");
+        await context.sync();
+
+        if (masterSheet.isNullObject || inputSheet.isNullObject) {
+          return { isExcelAvailable: true, hasSheets: false, hasData: false };
+        }
+
+        const usedRange = masterSheet.getUsedRangeOrNullObject();
+        usedRange.load("isNullObject, rowCount");
+        await context.sync();
+
+        const hasData = !usedRange.isNullObject && usedRange.rowCount > 1;
+        return { isExcelAvailable: true, hasSheets: true, hasData };
+      });
+    } catch (_) {
+      return { isExcelAvailable: false, hasSheets: false, hasData: false };
+    }
   }
 };

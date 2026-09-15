@@ -145,22 +145,10 @@ export function useCompanyConnections({
     activeConnection?.status
   );
 
-  const connectedCount =
-    platformConns.length > 0
-      ? platformConns.length
-      : connections.length > 0
-        ? connections.length
-        : 1;
+  const connectedCount = platformConns.length;
   const remainingCompanies = Math.max(0, maxCompanies - connectedCount);
 
   const handleAddCompanyClick = async () => {
-    try {
-      await ExcelService.clearMasterData();
-      localStorage.removeItem("fa_step_setup");
-      localStorage.removeItem("fa_step_pull");
-    } catch (err) {
-      console.error("Error clearing Excel data: ", err);
-    }
 
     const email = user.email || localStorage.getItem("fa_user_email") || "";
     let conns = connections;
@@ -187,7 +175,6 @@ export function useCompanyConnections({
     }
 
     if (addLog) addLog(`Opening ${label} connection window...`);
-    notify(`Connecting to ${label}...`, "success", null, provider);
 
     if (onConnect) {
       onConnect(provider);
@@ -240,7 +227,6 @@ export function useCompanyConnections({
     const compId = company.companyId;
     const compName = company.companyName || "Company";
     if (addLog) addLog(`Disconnecting ${compName}...`);
-    notify(`Disconnecting ${compName}...`, "success", null, provider);
     try {
       await apiFetch(`/api/connections/${compId}`, { method: "DELETE" });
       if (activeCompanyId === compId) {

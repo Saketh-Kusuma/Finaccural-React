@@ -69,9 +69,9 @@ export function App() {
   }, []);
 
   // Universal notify / showStatus function
-  // Signature: notify(titleOrMessage, type, detail, provider)
+  // Signature: notify(titleOrMessage, type, detail, provider, options)
   const notify = useCallback(
-    (titleOrMessage, type = "success", detail = "", provider = undefined) => {
+    (titleOrMessage, type = "success", detail = "", provider = undefined, options = {}) => {
       if (!titleOrMessage) return;
 
       // Detect error from title if not explicitly passed
@@ -100,8 +100,12 @@ export function App() {
         dismissToast(id);
       }, 4500);
 
-      // Persist notification to backend & history (skip transient % notifications)
-      if (!titleOrMessage.startsWith("Pulling Master Data (") || titleOrMessage.includes("100%")) {
+      const shouldPersist = options?.persist !== false && !options?.toastOnly;
+      const token = localStorage.getItem("fa_jwt_token");
+      const hasValidToken = token && !isTokenExpired(token);
+
+      // Persist notification to backend & history only when requested and authenticated
+      if (shouldPersist && hasValidToken) {
         const tempNotif = {
           id,
           type: resolvedType === "error" ? "error" : "success",
@@ -467,6 +471,43 @@ export function App() {
     setView("success");
   };
 
+  const startTrial = useCallback(async () => {
+    setBusy(true);
+    try {
+      const response = await apiFetch("/api/auth/start-trial", { method: "POST" });
+      const result = await response.json();
+      const serverUser = result?.user || {};
+      const finalPlan = serverUser.plan || "trial";
+      const subId = serverUser.subscriptionId || serverUser.id || localStorage.getItem("fa_subscription_id") || ("FA-SUB-" + Math.floor(100000 + Math.random() * 900000));
+      const endTimestamp = serverUser.trialEndsAt
+        ? new Date(serverUser.trialEndsAt).getTime()
+        : Date.now() + 2 * 60 * 1000;
+
+      localStorage.setItem("fa_has_subscription", "true");
+      localStorage.setItem("fa_plan", finalPlan);
+      localStorage.setItem("fa_subscription_plan", finalPlan);
+      localStorage.setItem("fa_subscription_id", String(subId));
+      localStorage.setItem("fa_trial_ends_at", String(endTimestamp));
+
+      setUser((prev) => ({
+        ...prev,
+        name: serverUser.name || prev.name || localStorage.getItem("fa_user_name") || "",
+        email: serverUser.email || prev.email || localStorage.getItem("fa_user_email") || "",
+        plan: finalPlan,
+        subscriptionId: String(subId)
+      }));
+
+      setShowTrialPopup(false);
+      notify("Free Trial started successfully!", "success");
+      setView("dashboard");
+    } catch (error) {
+      console.error("Start trial error:", error);
+      notify(error.message || "Couldn't start your free trial. Please try again.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }, [notify]);
+
   useEffect(() => {
     const receive = (event) => {
       if (!isTrustedOrigin(event.origin)) return;
@@ -491,7 +532,7 @@ export function App() {
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [user.email]);
+  }, [startTrial]);
 
   const handleOpenTrialSelect = useCallback(() => {
     setShowTrialPopup(true);
@@ -576,46 +617,6 @@ export function App() {
     }
   };
 
-  const startTrial = async () => {
-    setBusy(true);
-    try {
-      const response = await apiFetch("/api/auth/start-trial", { method: "POST" });
-      const result = await response.json();
-      const serverUser = result?.user || {};
-      const finalPlan = serverUser.plan || "trial";
-      const subId = serverUser.subscriptionId || serverUser.id || localStorage.getItem("fa_subscription_id") || ("FA-SUB-" + Math.floor(100000 + Math.random() * 900000));
-      const trialEndsAt = serverUser.trialEndsAt ? new Date(serverUser.trialEndsAt).getTime() : Date.now() + 2 * 60 * 1000;
-
-      localStorage.setItem("fa_has_subscription", "true");
-      localStorage.setItem("fa_plan", finalPlan);
-      localStorage.setItem("fa_subscription_plan", finalPlan);
-      localStorage.setItem("fa_subscription_id", String(subId));
-      if (serverUser.trialEndsAt) {
-        const trialEndsAt = new Date(serverUser.trialEndsAt).getTime();
-        localStorage.setItem("fa_trial_ends_at", String(trialEndsAt));
-      } else {
-        localStorage.removeItem("fa_trial_ends_at");
-        localStorage.removeItem("fa_trial_start");
-      }
-
-      setUser((prev) => ({
-        ...prev,
-        name: serverUser.name || prev.name || localStorage.getItem("fa_user_name") || "",
-        email: serverUser.email || prev.email || localStorage.getItem("fa_user_email") || "",
-        plan: finalPlan,
-        subscriptionId: String(subId)
-      }));
-
-      setShowTrialPopup(false);
-      notify("Free Trial started successfully!", "success");
-      setView("dashboard");
-    } catch (error) {
-      console.error("Start trial error:", error);
-      notify(error.message || "Couldn't start your free trial. Please try again.", "error");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const content = useMemo(() => {
     if (view === "loading") return <Loading />;

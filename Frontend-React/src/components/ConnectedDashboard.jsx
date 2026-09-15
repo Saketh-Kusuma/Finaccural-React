@@ -132,7 +132,7 @@ export function ConnectedDashboard({
           planClean={planClean}
           onClose={() => setMenu(false)}
           onLogout={logout}
-          onChangePlan={onChangePlan || (() => notify("Plan selector opened.", "success"))}
+          onChangePlan={onChangePlan}
           notify={notify}
         />
       )}
@@ -154,8 +154,6 @@ export function ConnectedDashboard({
           onReconnectCompany={(targetCompany) => {
             const target = targetCompany || companyConn.activeConnection;
             const reconnectId = target?.companyId || companyConn.realmId || null;
-            const compName = target?.companyName || companyConn.companyName || "company";
-            notify(`Reconnecting ${compName}...`, "success", `Launching re-authorization for ${compName}`, provider);
             if (onConnect) onConnect(provider, reconnectId);
             else openErp(provider, user, reconnectId);
           }}
@@ -210,8 +208,6 @@ export function ConnectedDashboard({
         onAddAnotherCompany={companyConn.handleAddCompanyClick}
         onReconnectCompany={(targetCompany) => {
           const reconnectId = targetCompany?.companyId || null;
-          const compName = targetCompany?.companyName || "company";
-          notify(`Reconnecting ${compName}...`, "success", `Launching re-authorization for ${compName}`, provider);
           if (onConnect) onConnect(provider, reconnectId);
           else openErp(provider, user, reconnectId);
         }}

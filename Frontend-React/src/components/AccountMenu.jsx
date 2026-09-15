@@ -37,7 +37,7 @@ export function AccountMenu({
           className="dropdown-menu-item"
           onClick={() => {
             onClose();
-            notify("Account management is coming soon.");
+            if (notify) notify("Account management is coming soon.", "success", "", undefined, { persist: false });
           }}
         >
           <svg
@@ -61,7 +61,7 @@ export function AccountMenu({
           className="dropdown-menu-item"
           onClick={() => {
             onClose();
-            notify("Settings saved.");
+            if (notify) notify("Settings are currently managed via your subscription plan.", "success", "", undefined, { persist: false });
           }}
         >
           <svg
@@ -85,7 +85,11 @@ export function AccountMenu({
           className="dropdown-menu-item"
           onClick={() => {
             onClose();
-            notify(`Your ${planClean || "Pro"} Plan is active.`);
+            if (onChangePlan) {
+              onChangePlan();
+            } else if (notify) {
+              notify(`Your ${planClean || "Pro"} Plan is active.`, "success", "", undefined, { persist: false });
+            }
           }}
         >
           <svg
@@ -111,8 +115,6 @@ export function AccountMenu({
             onClose();
             if (onChangePlan) {
               onChangePlan();
-            } else {
-              notify("Plan selector opened.");
             }
           }}
         >
@@ -139,7 +141,8 @@ export function AccountMenu({
           className="dropdown-menu-item"
           onClick={() => {
             onClose();
-            notify("FinAccrual Support: support@finaccrual.com");
+            navigator.clipboard?.writeText("support@finaccrual.com").catch(() => {});
+            if (notify) notify("Support email (support@finaccrual.com) copied to clipboard.", "success", "", undefined, { persist: false });
           }}
         >
           <svg
@@ -162,9 +165,15 @@ export function AccountMenu({
           className="dropdown-menu-item"
           onClick={() => {
             onClose();
-            notify(
-              "Instructions: Setup Master & Input Sheets, then pull data.",
-            );
+            if (notify) {
+              notify(
+                "Instructions: Setup Master & Input Sheets, then pull data.",
+                "success",
+                "",
+                undefined,
+                { persist: false }
+              );
+            }
           }}
         >
           <svg

@@ -238,6 +238,10 @@ const ExcelService = {
 
   async setupWorkbookSheets(provider) {
     return ExcelSheetSetup.setupWorkbookSheets(provider);
+  },
+
+  async checkWorkbookStatus() {
+    return ExcelSheetSetup.checkWorkbookStatus();
   }
 };
 

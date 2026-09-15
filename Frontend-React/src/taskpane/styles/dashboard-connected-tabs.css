@@ -352,7 +352,7 @@
   font-weight: 700;
 }
 .conn-step.active {
-  color: #15803d;
+  color: #2563eb;
 }
 .conn-step.complete {
   color: #15803d;
@@ -368,12 +368,22 @@
   font-size: 9px;
   font-weight: 700;
   color: #ffffff;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 .conn-step.complete .conn-step-num {
   background: #10b981;
 }
 .conn-step.active .conn-step-num {
-  background: #10b981;
+  background: #2563eb;
+  animation: connStepPulse 1.4s ease-in-out infinite;
+}
+@keyframes connStepPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+  }
 }
 .conn-log {
   height: 80px;

@@ -25,31 +25,54 @@ export function useMasterDataSync({
   const setupKey = companyId ? `fa_step_setup_${companyId}` : "fa_step_setup";
   const pullKey  = companyId ? `fa_step_pull_${companyId}`  : "fa_step_pull";
 
-  const [isSetupDone, setIsSetupDone] = useState(
-    () => localStorage.getItem(companyId ? `fa_step_setup_${companyId}` : "fa_step_setup") === "complete"
-  );
-  const [isPullDone, setIsPullDone] = useState(
-    () => localStorage.getItem(companyId ? `fa_step_pull_${companyId}` : "fa_step_pull") === "complete"
-  );
+  const [isSetupDone, setIsSetupDone] = useState(false);
+  const [isPullDone, setIsPullDone] = useState(false);
   const [logs, setLogs] = useState([]);
 
-  // When the active company changes, Excel data is cleared, so reset setup & pull steps to blue (not completed)
-  const prevCompanyIdRef = useRef(companyId);
+  // Verify real workbook status against Excel (prevents showing green on new or uninitialized workbooks)
   useEffect(() => {
-    if (prevCompanyIdRef.current === companyId) return;
-    prevCompanyIdRef.current = companyId;
+    let mounted = true;
 
-    if (companyId) {
-      localStorage.removeItem(`fa_step_setup_${companyId}`);
-      localStorage.removeItem(`fa_step_pull_${companyId}`);
+    async function syncWithWorkbook() {
+      const status = await ExcelService.checkWorkbookStatus();
+      if (!mounted) return;
+
+      if (status.isExcelAvailable) {
+        if (!status.hasSheets) {
+          // Sheets do NOT exist in the active workbook
+          setIsSetupDone(false);
+          setIsPullDone(false);
+          localStorage.removeItem(setupKey);
+          localStorage.removeItem(pullKey);
+          return;
+        }
+
+        // Sheets exist in active workbook
+        setIsSetupDone(true);
+        localStorage.setItem(setupKey, "complete");
+
+        if (!status.hasData) {
+          // No data rows pulled into 1.Master_Data yet
+          setIsPullDone(false);
+          localStorage.removeItem(pullKey);
+        } else {
+          // Both sheets and data exist
+          setIsPullDone(true);
+          localStorage.setItem(pullKey, "complete");
+        }
+      } else {
+        // Fallback if Excel API is not available (e.g. testing in browser)
+        setIsSetupDone(localStorage.getItem(setupKey) === "complete");
+        setIsPullDone(localStorage.getItem(pullKey) === "complete");
+      }
     }
-    localStorage.removeItem("fa_step_setup");
-    localStorage.removeItem("fa_step_pull");
 
-    setIsSetupDone(false);
-    setIsPullDone(false);
-    setLogs([]);
-  }, [companyId]);
+    syncWithWorkbook();
+
+    return () => {
+      mounted = false;
+    };
+  }, [companyId, setupKey, pullKey]);
 
   const addLog = useCallback((msg) => {
     const time = new Date().toLocaleTimeString();
@@ -106,8 +129,9 @@ export function useMasterDataSync({
     if (checkExpiredCompanyGuard()) return;
     if (setupBusy) return;
     setSetupBusy(true);
+    setIsSetupDone(false);
+    localStorage.removeItem(setupKey);
     addLog(`Setting up Master & Input sheets for ${label}...`);
-    notify("Setting up sheets...", "success", null, provider);
     try {
       await ExcelService.setupWorkbookSheets(provider);
       localStorage.setItem(setupKey, "complete");
@@ -136,6 +160,8 @@ export function useMasterDataSync({
     }
 
     setPullBusy(true);
+    setIsPullDone(false);
+    localStorage.removeItem(pullKey);
     const activeId = activeConnection?.companyId || realmId || "";
 
     // Start free trial timer when Pull Master Data is clicked if not already active
@@ -147,7 +173,7 @@ export function useMasterDataSync({
     }
 
     addLog(`Pulling master data from ${label}...`);
-    notify("Initializing Data Pull...", "success", "Pre-flight record count check in progress...", provider);
+    notify("Started pulling data", "success", `Fetching records from ${label}...`, provider);
 
     try {
       const data = await fetchMasterDataStream(
@@ -156,11 +182,8 @@ export function useMasterDataSync({
         planClean,
         (progress) => {
           if (progress.percentage) {
-            notify(
-              `Pulling Master Data (${progress.percentage}%)`,
-              "success",
-              `Fetched ${progress.fetchedRecords || 0} of ${progress.totalRecords || 0} records`,
-              provider
+            addLog(
+              `Pulling data: ${progress.percentage}% (${progress.fetchedRecords || 0}/${progress.totalRecords || 0} records)`
             );
           }
         }
@@ -221,7 +244,6 @@ export function useMasterDataSync({
     setSpinning(true);
     const activeId = activeConnection?.companyId || realmId || "";
     addLog(`Refreshing live data from ${label}...`);
-    notify("Refreshing...", "success", null, provider);
     try {
       const data = await fetchIncrementalDataStream(
         provider,
@@ -240,7 +262,7 @@ export function useMasterDataSync({
         await ExcelService.stampLastRefreshed(timestamp);
         if (updatedCount === 0) {
           addLog("Schedule Refreshed: No new records found.");
-          notify("Schedule Refreshed", "success", "No new Records Found .", provider);
+          notify("Schedule Refreshed", "success", "No new records found.", provider);
         } else {
           addLog(`Schedule Refreshed: ${updatedCount} records added.`);
           notify(

@@ -33,7 +33,7 @@ export function SubscriptionCard({
       <div className="fa-sub-actions">
         <button
           className="fa-btn-sub-outline"
-          onClick={onChangePlan || (() => notify("Plan selector opened.", "success"))}
+          onClick={onChangePlan}
         >
           Change Plan
         </button>
