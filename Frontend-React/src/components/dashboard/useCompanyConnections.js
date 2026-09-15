@@ -43,6 +43,31 @@ export function useCompanyConnections({
     () => localStorage.getItem("fa_current_company_id") || null
   );
 
+  const platformConns = connections.filter(
+    (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()
+  );
+
+  const activeConnection =
+    platformConns.find((c) => c.companyId === activeCompanyId) ||
+    platformConns[0] ||
+    connections.find(
+      (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()
+    ) ||
+    connections[0];
+
+  const companyName =
+    activeConnection?.companyName ||
+    (isXero ? "sushanth" : "Sandbox Company GB ce1f");
+  const realmId =
+    activeConnection?.companyId || "c90dc421-681f-4bc6-a3c0-812a6c44ab03";
+  const lastSyncText = formatRelativeTime(
+    activeConnection?.lastSyncedAt,
+    activeConnection?.status
+  );
+
+  const connectedCount = platformConns.length;
+  const remainingCompanies = Math.max(0, maxCompanies - connectedCount);
+
   const reloadConnections = useCallback(async () => {
     const email = user.email || localStorage.getItem("fa_user_email") || "";
     if (!email) return [];
@@ -75,17 +100,42 @@ export function useCompanyConnections({
     };
   }, [user.email]);
 
+  const platformConnsRef = useRef(platformConns);
+  useEffect(() => {
+    platformConnsRef.current = platformConns;
+  }, [platformConns]);
+
   useEffect(() => {
     const receive = (event) => {
       if (!isTrustedOrigin(event.origin)) return;
-      if (event.data === "qb_connected" || event.data === "xero_connected") {
-        if (addLog) addLog(`Connection completed: ${event.data}`);
+
+      let data = event.data;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch (_) {}
+      }
+
+      if (data?.type === "company_already_connected") {
+        const compName = data.companyName || "This company";
+        notify(
+          "Company Already Connected",
+          "error",
+          `"${compName}" is already connected to your dashboard. Please select a different company to add.`,
+          provider
+        );
+        if (addLog) addLog(`Add Company failed: "${compName}" is already connected.`);
+        return;
+      }
+
+      if (data === "qb_connected" || data === "xero_connected") {
+        if (addLog) addLog(`Connection completed: ${data}`);
         const pendingReconnectId = typeof sessionStorage !== "undefined"
           ? sessionStorage.getItem("fa_pending_reconnect_id")
           : null;
         if (typeof sessionStorage !== "undefined") {
           sessionStorage.removeItem("fa_pending_reconnect_id");
         }
+
+        const prevIds = new Set((platformConnsRef.current || []).map((c) => c.companyId));
 
         reloadConnections().then((conns) => {
           if (pendingReconnectId) {
@@ -97,20 +147,40 @@ export function useCompanyConnections({
               return;
             }
           }
+
           const matching = conns.filter(
             (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()
           );
+
+          // If this was an "Add Another Company" action (not reconnect), verify a new company was actually added
+          if (!pendingReconnectId && prevIds.size > 0) {
+            const newlyAdded = matching.find((c) => !prevIds.has(c.companyId));
+            if (!newlyAdded) {
+              const currentComp = matching.find((c) => c.companyId === activeCompanyId) || matching[0];
+              const compName = currentComp?.companyName || label + " Company";
+              notify(
+                "Company Already Connected",
+                "error",
+                `"${compName}" is already connected to your dashboard. Please select a different company to add.`,
+                provider
+              );
+              if (addLog) addLog(`Add Company failed: "${compName}" is already connected.`);
+              return;
+            }
+          }
+
           if (matching.length > 0) {
             const newest = matching[matching.length - 1];
             setActiveCompanyId(newest.companyId);
             localStorage.setItem("fa_current_company_id", newest.companyId);
+            notify("Company connected successfully.", "success", `${newest.companyName || label} is now connected.`, provider);
           }
         });
       }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [provider, reloadConnections, addLog, label, notify]);
+  }, [provider, reloadConnections, addLog, label, notify, activeCompanyId]);
 
   useEffect(() => {
     const handleErpExpired = (event) => {
@@ -123,30 +193,6 @@ export function useCompanyConnections({
     return () => window.removeEventListener("fa_erp_session_expired", handleErpExpired);
   }, [label, provider, addLog, notify, reloadConnections]);
 
-  const platformConns = connections.filter(
-    (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()
-  );
-
-  const activeConnection =
-    platformConns.find((c) => c.companyId === activeCompanyId) ||
-    platformConns[0] ||
-    connections.find(
-      (c) => (c.platform || "").toLowerCase() === (provider || "").toLowerCase()
-    ) ||
-    connections[0];
-
-  const companyName =
-    activeConnection?.companyName ||
-    (isXero ? "sushanth" : "Sandbox Company GB ce1f");
-  const realmId =
-    activeConnection?.companyId || "c90dc421-681f-4bc6-a3c0-812a6c44ab03";
-  const lastSyncText = formatRelativeTime(
-    activeConnection?.lastSyncedAt,
-    activeConnection?.status
-  );
-
-  const connectedCount = platformConns.length;
-  const remainingCompanies = Math.max(0, maxCompanies - connectedCount);
 
   const handleAddCompanyClick = async () => {
 

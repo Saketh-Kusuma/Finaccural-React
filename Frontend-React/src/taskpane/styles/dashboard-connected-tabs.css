@@ -331,6 +331,18 @@
   border-color: #cbd5e1;
   transform: translateY(-1px);
 }
+.conn-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+.refresh-schedule-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
 
 /* Progress Panel & Log */
 .conn-progress-panel {

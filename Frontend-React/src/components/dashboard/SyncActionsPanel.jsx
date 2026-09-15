@@ -21,17 +21,17 @@ export function SyncActionsPanel({
         <button
           className="refresh-schedule-btn"
           onClick={onRefresh}
-          disabled={spinning}
+          disabled={spinning || pullBusy || setupBusy}
         >
           <RefreshIcon spinning={spinning} />
-          {spinning ? "Refreshing…" : "Refresh Schedule"}
+          {spinning ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
       <button
         className="conn-action-btn primary-btn"
         onClick={onSetup}
-        disabled={setupBusy}
+        disabled={setupBusy || pullBusy || spinning}
       >
         <PlayIcon />
         {setupBusy ? "Setting up sheets…" : "Setup Master & Input Sheets"}
@@ -40,7 +40,7 @@ export function SyncActionsPanel({
       <button
         className="conn-action-btn secondary-btn"
         onClick={onPull}
-        disabled={pullBusy}
+        disabled={pullBusy || setupBusy || spinning}
       >
         <DownloadIcon />
         {pullBusy ? "Pulling Master Data…" : `Pull Master Data from ${label}`}

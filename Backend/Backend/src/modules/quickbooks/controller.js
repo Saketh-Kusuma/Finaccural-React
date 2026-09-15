@@ -110,6 +110,33 @@ class QuickbooksController {
             if (!reconnectId && userId) {
                 const { QuickBooksToken } = require('../../core/database');
                 const { Op } = require('sequelize');
+
+                const alreadyConnected = await QuickBooksToken.findOne({
+                    where: {
+                        user_id: userId,
+                        realm_id: String(realmId),
+                        status: { [Op.ne]: 'Disconnected' }
+                    }
+                });
+
+                if (alreadyConnected) {
+                    const compName = alreadyConnected.company_name || realmId;
+                    return res.send(renderOAuthBlockedPage({
+                        title: 'Company Already Connected',
+                        icon: '⚠️',
+                        errorPayload: {
+                            type: 'company_already_connected',
+                            platform: 'quickbooks',
+                            realmId: String(realmId),
+                            companyName: compName
+                        },
+                        lines: [
+                            `The company "${compName}" is already connected to your FinAccrual account.`,
+                            'To add another company, please select a different company during the QuickBooks authorization step.'
+                        ]
+                    }));
+                }
+
                 const otherCount = await QuickBooksToken.count({
                     where: { user_id: userId, realm_id: { [Op.ne]: realmId } }
                 });

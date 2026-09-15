@@ -127,7 +127,16 @@ export function useMasterDataSync({
   const handleSetup = async () => {
     if (checkTrialExpiredGuard()) return;
     if (checkExpiredCompanyGuard()) return;
-    if (setupBusy) return;
+    if (setupBusy || pullBusy || spinning) return;
+
+    if (isSetupDone) {
+      const msg = "Master and Input sheets already set up.";
+      const detail = `Workbook sheets are already configured for ${label}.`;
+      addLog(`${msg} ${detail}`);
+      notify(msg, "success", detail, provider, { persist: false });
+      return;
+    }
+
     setSetupBusy(true);
     setIsSetupDone(false);
     localStorage.removeItem(setupKey);
@@ -150,12 +159,20 @@ export function useMasterDataSync({
   const handlePull = async () => {
     if (checkTrialExpiredGuard()) return;
     if (checkExpiredCompanyGuard()) return;
-    if (pullBusy) return;
+    if (pullBusy || setupBusy || spinning) return;
 
     if (!isSetupDone) {
       const detailMsg = `Cannot pull master data: You must run Setup Master & Input Sheets for ${label} first.`;
       addLog(`Pull Master Data failed: ${detailMsg}`);
       notify("Pull Master Data Failed", "error", detailMsg, provider);
+      return;
+    }
+
+    if (isPullDone) {
+      const msg = "Master data is already fetched.";
+      const detail = "Use 'Refresh' to sync new updates.";
+      addLog(`${msg} ${detail}`);
+      notify(msg, "success", detail, provider, { persist: false });
       return;
     }
 
@@ -225,7 +242,7 @@ export function useMasterDataSync({
   const handleRefresh = async () => {
     if (checkTrialExpiredGuard()) return;
     if (checkExpiredCompanyGuard()) return;
-    if (spinning) return;
+    if (spinning || pullBusy || setupBusy) return;
 
     if (!isSetupDone) {
       const msg = `Cannot refresh: You must run Setup Master & Input Sheets for ${label} first.`;

@@ -22,13 +22,16 @@ exports.encodeBasicAuth = (clientId, clientSecret) => {
  * @param {string[]} opts.lines   Body paragraphs, already plain text.
  * @param {string}  [opts.icon]   Emoji shown above the headline.
  */
-exports.renderOAuthBlockedPage = ({ title, lines = [], icon = '⚠️' }) => `
+exports.renderOAuthBlockedPage = ({ title, lines = [], icon = '⚠️', errorPayload = null }) => `
         <html>
             <body style="font-family:sans-serif; text-align:center; padding: 40px; background:#fff1f2; color:#9f1239;">
                 <div style="font-size: 50px; margin-bottom: 20px;">${icon}</div>
                 <h2>${title}</h2>
                 ${lines.map(l => `<p style="font-size: 14px; color: #4b5563;">${l}</p>`).join('\n                ')}
                 <button onclick="window.close()" style="margin-top: 20px; padding:10px 20px; background:#be123c; color:white; border:none; border-radius:5px; cursor:pointer; font-weight: bold;">Close Window</button>
+                <script>
+                    ${errorPayload ? `if (window.opener) { window.opener.postMessage(${JSON.stringify(errorPayload)}, '*'); }` : ''}
+                </script>
             </body>
         </html>
     `;
